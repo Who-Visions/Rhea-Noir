@@ -274,11 +274,11 @@ async def fleet_chat(req: OpenAIChatCompletionRequest):
 async def chat_legacy(req: ChatRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-2.5-flash", contents=req.message)
+        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=req.message)
         return {
             "response": response.text,
             "agent_name": "Rhea",
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3-flash-preview",
             "latency_ms": 100,
             "timestamp": datetime.now().timestamp()
         }
@@ -292,8 +292,8 @@ async def chat_legacy(req: ChatRequest):
 async def fleet_generate(req: GenerateRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-2.5-flash", contents=req.prompt)
-        return {"response": response.text, "model_used": "gemini-2.5-flash", "grounded": False}
+        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=req.prompt)
+        return {"response": response.text, "model_used": "gemini-3-flash-preview", "grounded": False}
     except Exception as e:
          logger.error(f"Generate Error: {e}")
          # Return a graceful failure instead of 500
