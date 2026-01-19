@@ -91,7 +91,7 @@ class ExecuteCodeRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     prompt: str
-    model: Optional[str] = "gemini-3-flash-preview"
+    model: Optional[str] = "gemini-2.0-flash-exp"
     temperature: float = 0.7
     use_grounding: bool = True
 
@@ -136,7 +136,7 @@ class OpenAIMessage(BaseModel):
     content: Union[str, List[Any]]
 
 class OpenAIChatCompletionRequest(BaseModel):
-    model: Optional[str] = "gemini-3-flash-preview"
+    model: Optional[str] = "gemini-2.0-flash-exp"
     messages: List[OpenAIMessage]
     temperature: Optional[float] = 0.7
     stream: Optional[bool] = False
@@ -227,8 +227,8 @@ async def get_agent_card_standard():
 async def list_models_v1():
     return {
         "data": [
-            {"id": "gemini-3-flash", "object": "model"},
-            {"id": "gemini-3-pro", "object": "model"},
+            {"id": "gemini-2.0-flash-exp", "object": "model"},
+            {"id": "gemini-1.5-pro-002", "object": "model"},
             {"id": "imagen-3.0", "object": "model"}
         ]
     }
@@ -247,14 +247,14 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
         if isinstance(last_msg, list): last_msg = str(last_msg)
         
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash",
+            model="gemini-2.0-flash-exp",
             contents=last_msg
         )
         return {
             "id": "chatcmpl-rhea",
             "object": "chat.completion",
             "created": int(datetime.now().timestamp()),
-            "model": "gemini-3-flash",
+            "model": "gemini-2.0-flash-exp",
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": response.text},
@@ -272,11 +272,11 @@ async def fleet_chat(req: OpenAIChatCompletionRequest):
 async def chat_legacy(req: ChatRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.message)
+        response = await client.aio.models.generate_content(model="gemini-2.0-flash-exp", contents=req.message)
         return {
             "response": response.text,
             "agent_name": "Rhea",
-            "model": "gemini-3-flash",
+            "model": "gemini-2.0-flash-exp",
             "latency_ms": 100,
             "timestamp": datetime.now().timestamp()
         }
@@ -290,8 +290,8 @@ async def chat_legacy(req: ChatRequest):
 async def fleet_generate(req: GenerateRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.prompt)
-        return {"response": response.text, "model_used": "gemini-3-flash", "grounded": False}
+        response = await client.aio.models.generate_content(model="gemini-2.0-flash-exp", contents=req.prompt)
+        return {"response": response.text, "model_used": "gemini-2.0-flash-exp", "grounded": False}
     except Exception as e:
          logger.error(f"Generate Error: {e}")
          # Return a graceful failure instead of 500
@@ -335,7 +335,7 @@ async def generate_world(req: WorldBuildRequest):
 async def start_research(req: ResearchRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=f"Research: {req.query}")
+        response = await client.aio.models.generate_content(model="gemini-2.0-flash-exp", contents=f"Research: {req.query}")
         return {"status": "completed", "summary": response.text}
     except Exception as e:
         logger.error(f"Research Error: {e}")
