@@ -202,18 +202,28 @@ def route_request(
     # Flash supports: minimal, low, medium, high
     # Pro supports: low, high (Defaults to High)
     
-    final_thinking_level = thinking_level
+    # Default mapping (safe for Flash)
+    sdk_thinking_level = types.ThinkingLevel.HIGH # Default safe
     
+    if thinking_level == ThinkingLevel.MINIMAL:
+        sdk_thinking_level = "MINIMAL" # types.ThinkingLevel.MINIMAL might be flaky in preview, string is safer if enum missing
+    elif thinking_level == ThinkingLevel.LOW:
+        sdk_thinking_level = types.ThinkingLevel.LOW
+    elif thinking_level == ThinkingLevel.MEDIUM:
+        sdk_thinking_level = types.ThinkingLevel.MEDIUM
+    elif thinking_level == ThinkingLevel.HIGH:
+        sdk_thinking_level = types.ThinkingLevel.HIGH
+        
     # Pro Compatibility Layer
     if selected_model == "gemini-3-pro-preview":
         if thinking_level == ThinkingLevel.MINIMAL:
-            final_thinking_level = ThinkingLevel.LOW # Pro min is Low
+            sdk_thinking_level = types.ThinkingLevel.LOW # Pro min is Low
         elif thinking_level == ThinkingLevel.MEDIUM:
-            final_thinking_level = ThinkingLevel.HIGH # Pro medium maps to High (or Low, but High is safer for reasoning)
+            sdk_thinking_level = types.ThinkingLevel.HIGH # Pro medium maps to High
             
     generation_config = types.GenerateContentConfig(
         temperature=1.0, # Gemini 3 recommends 1.0 default
-        thinking_config=types.ThinkingConfig(thinking_level=final_thinking_level),
+        thinking_config=types.ThinkingConfig(thinking_level=sdk_thinking_level),
     )
     
     return selected_model, generation_config
