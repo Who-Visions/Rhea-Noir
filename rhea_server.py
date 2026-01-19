@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Query, Body, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, Body, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
 import os
@@ -10,6 +11,12 @@ from dotenv import load_dotenv
 import asyncio
 import base64
 from datetime import datetime
+import logging
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("rhea.server")
+
 
 # Load Environment
 load_dotenv()
@@ -40,6 +47,23 @@ app = FastAPI(
     description="Cybernetic Creative Partner & Web Intelligence Officer (Kaedra Class)",
     lifespan=lifespan
 )
+
+# --- Global Exception Handlers (Prevent 500s) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global Error: {exc}")
+    return JSONResponse(
+        status_code=503, # Service Unavailable (safest fallback)
+        content={"detail": "Rhea Cortex Malfunction", "error": str(exc), "type": "GlobalException"},
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
 
 # --- Pydantic Models (Kaedra Spec) ---
 
@@ -246,22 +270,33 @@ async def fleet_chat(req: OpenAIChatCompletionRequest):
 
 @app.post("/v1/chat")
 async def chat_legacy(req: ChatRequest):
-    if not client: raise HTTPException(status_code=503)
-    response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.message)
-    return {
-        "response": response.text,
-        "agent_name": "Rhea",
-        "model": "gemini-3-flash",
-        "latency_ms": 100,
-        "timestamp": datetime.now().timestamp()
-    }
+    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
+    try:
+        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.message)
+        return {
+            "response": response.text,
+            "agent_name": "Rhea",
+            "model": "gemini-3-flash",
+            "latency_ms": 100,
+            "timestamp": datetime.now().timestamp()
+        }
+    except Exception as e:
+        logger.error(f"Chat Legacy Error: {e}")
+        return JSONResponse(status_code=503, content={"detail": f"Generation Failed: {str(e)}"})
+
 
 # Generate (Text/Image/Video/World)
 @app.post("/generate")
 async def fleet_generate(req: GenerateRequest):
-    if not client: raise HTTPException(status_code=503)
-    response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.prompt)
-    return {"response": response.text, "model_used": "gemini-3-flash", "grounded": False}
+    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
+    try:
+        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=req.prompt)
+        return {"response": response.text, "model_used": "gemini-3-flash", "grounded": False}
+    except Exception as e:
+         logger.error(f"Generate Error: {e}")
+         # Return a graceful failure instead of 500
+         return JSONResponse(status_code=503, content={"detail": f"Generation Failed: {str(e)}"})
+
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
@@ -298,9 +333,14 @@ async def generate_world(req: WorldBuildRequest):
 # Research & Code
 @app.post("/research")
 async def start_research(req: ResearchRequest):
-    if not client: raise HTTPException(status_code=503)
-    response = await client.aio.models.generate_content(model="gemini-3-flash", contents=f"Research: {req.query}")
-    return {"status": "completed", "summary": response.text}
+    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
+    try:
+        response = await client.aio.models.generate_content(model="gemini-3-flash", contents=f"Research: {req.query}")
+        return {"status": "completed", "summary": response.text}
+    except Exception as e:
+        logger.error(f"Research Error: {e}")
+        return JSONResponse(status_code=503, content={"detail": f"Research Failed: {str(e)}"})
+
 
 @app.get("/research/{task_id}")
 async def get_research_status(task_id: str):
