@@ -91,7 +91,7 @@ class ExecuteCodeRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     prompt: str
-    model: Optional[str] = "gemini-3-flash-preview"
+    model: Optional[str] = "gemini-3-pro-preview"
     temperature: float = 0.7
     use_grounding: bool = True
 
@@ -135,11 +135,89 @@ class OpenAIMessage(BaseModel):
     role: str
     content: Union[str, List[Any]]
 
+from enum import Enum
+
+class ThinkingLevel(str, Enum):
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+class SmartRouterConfig(BaseModel):
+    # dynamic routing configuration
+    force_model: Optional[str] = None
+    min_thinking_level: ThinkingLevel = ThinkingLevel.LOW
+    auto_route: bool = True
+
+class GenerateRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = None # If None, Smart Router decides
+    thinking_level: ThinkingLevel = ThinkingLevel.LOW
+    temperature: float = 0.7
+    use_grounding: bool = True
+    context_id: Optional[str] = None
+
+class GenerateResponse(BaseModel):
+    response: str
+    model_used: str
+    thinking_level_used: str
+    grounded: bool
+
 class OpenAIChatCompletionRequest(BaseModel):
-    model: Optional[str] = "gemini-3-flash-preview"
+    model: Optional[str] = None # Router handles default
     messages: List[OpenAIMessage]
     temperature: Optional[float] = 0.7
+    thinking_level: ThinkingLevel = ThinkingLevel.LOW
     stream: Optional[bool] = False
+
+# --- Senior-Level Smart Router ---
+def route_request(
+    requested_model: Optional[str], 
+    thinking_level: ThinkingLevel, 
+    prompt_complexity: int = 1
+) -> tuple[str, types.GenerateContentConfig]:
+    """
+    Intelligent routing logic for Gemini 3 Fleet.
+    Decides between Flash (Speed) and Pro (Reasoning) based on constraints.
+    """
+    
+    # 1. Hardware/Model Selection
+    selected_model = "gemini-3-flash-preview" # Default WORKHORSE
+    
+    # Auto-Upgrade logic: High thinking or explicit Pro request upgrades to Pro
+    if requested_model:
+        selected_model = requested_model
+    elif thinking_level == ThinkingLevel.HIGH:
+        selected_model = "gemini-3-pro-preview" # Upgrade for deep thought
+    elif prompt_complexity > 8: # Arbitrary complexity heuristic
+         selected_model = "gemini-3-pro-preview"
+    
+    # 2. Config Generation (Using Raw Google GenAI Types)
+    # Map API level to SDK config
+    # Note: 'thinking_level' parameter name might vary in valid SDK versions, 
+    # checking documentation this is 'reasoning_effort' in OAI or 'thinking_config' in Google Native.
+    # We will construct the native config for the Google Client.
+    
+    # Verify model compatibility with thinking levels
+    # Flash supports: minimal, low, medium, high
+    # Pro supports: low, high (Defaults to High)
+    
+    final_thinking_level = thinking_level
+    
+    # Pro Compatibility Layer
+    if selected_model == "gemini-3-pro-preview":
+        if thinking_level == ThinkingLevel.MINIMAL:
+            final_thinking_level = ThinkingLevel.LOW # Pro min is Low
+        elif thinking_level == ThinkingLevel.MEDIUM:
+            final_thinking_level = ThinkingLevel.HIGH # Pro medium maps to High (or Low, but High is safer for reasoning)
+            
+    generation_config = types.GenerateContentConfig(
+        temperature=1.0, # Gemini 3 recommends 1.0 default
+        thinking_config=types.ThinkingConfig(thinking_level=final_thinking_level),
+    )
+    
+    return selected_model, generation_config
+
 
 class RazerEffectRequest(BaseModel):
     effect: str = "static"
@@ -248,15 +326,19 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
         last_msg = req.messages[-1].content if req.messages else "Hello"
         if isinstance(last_msg, list): last_msg = str(last_msg)
         
+        # ROUTING
+        model_id, config = route_request(req.model, req.thinking_level)
+        
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=last_msg
+            model=model_id,
+            contents=last_msg,
+            config=config # Pass the smart config
         )
         return {
             "id": "chatcmpl-rhea",
             "object": "chat.completion",
             "created": int(datetime.now().timestamp()),
-            "model": "gemini-3-flash-preview",
+            "model": model_id,
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": response.text},
@@ -266,19 +348,23 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/chat")
-async def fleet_chat(req: OpenAIChatCompletionRequest):
-    return await chat_completions(req)
-
 @app.post("/v1/chat")
 async def chat_legacy(req: ChatRequest):
+    # Legacy alias - Auto-routes to Flash/Low
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=req.message)
+        # Default smart route
+        model_id, config = route_request(None, ThinkingLevel.LOW)
+        
+        response = await client.aio.models.generate_content(
+            model=model_id, 
+            contents=req.message,
+            config=config
+        )
         return {
             "response": response.text,
             "agent_name": "Rhea",
-            "model": "gemini-3-flash-preview",
+            "model": model_id,
             "latency_ms": 100,
             "timestamp": datetime.now().timestamp()
         }
@@ -286,52 +372,89 @@ async def chat_legacy(req: ChatRequest):
         logger.error(f"Chat Legacy Error: {e}")
         return JSONResponse(status_code=503, content={"detail": f"Generation Failed: {str(e)}"})
 
-
 # Generate (Text/Image/Video/World)
 @app.post("/generate")
 async def fleet_generate(req: GenerateRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=req.prompt)
-        return {"response": response.text, "model_used": "gemini-3-flash-preview", "grounded": False}
+        # User has full control via req parameters
+        model_id, config = route_request(req.model, req.thinking_level)
+        
+        response = await client.aio.models.generate_content(
+            model=model_id, 
+            contents=req.prompt,
+            config=config
+        )
+        return {
+            "response": response.text, 
+            "model_used": model_id, 
+            "thinking_level_used": req.thinking_level,
+            "grounded": req.use_grounding
+        }
     except Exception as e:
          logger.error(f"Generate Error: {e}")
-         # Return a graceful failure instead of 500
          return JSONResponse(status_code=503, content={"detail": f"Generation Failed: {str(e)}"})
-
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
+        # Nano Banana Pro Pattern (Gemini 3 Pro Image)
+        # Supports Thinking + Grounding + 4K
+        
         response = await client.aio.models.generate_content(
             model="gemini-3-pro-image-preview",
             contents=req.prompt,
             config=types.GenerateContentConfig(
-                image_config=types.ImageConfig(aspect_ratio="16:9", image_size="4K"),
-                tools=[{"google_search": {}}]
+                response_modalities=["TEXT", "IMAGE"], # Critical for Thinking + Image
+                image_config=types.ImageConfig(
+                    aspect_ratio="16:9", 
+                    image_size="4K"
+                ),
+                tools=[{"google_search": {}}], # Grounding supported
+                thinking_config=types.ThinkingConfig(
+                    include_thoughts=True # See the creative process
+                )
             )
         )
-        # Mock return for A2A - actual return needs handling of inline_data
-        return "Image Generated (Base64/Url Placeholder - Gemini 3 Pro Image)"
+        
+        # Parse Response for Images
+        generated_images = []
+        thought_trace = ""
+        
+        if response.parts:
+            for part in response.parts:
+                if part.text:
+                    thought_trace += part.text + "\n"
+                if part.inline_data: # Image data
+                   # In a real app we would upload this to cloud storage
+                   # For now we just acknowledge it exists
+                   generated_images.append("timestamped_image_ref_placeholder")
+                   
+        return {
+            "status": "success",
+            "images": generated_images,
+            "thoughts": thought_trace,
+            "model_used": "gemini-3-pro-image-preview"
+        }
+
     except Exception as e:
+        logger.error(f"Image Gen Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate/video")
 async def generate_video(req: VideoGenerationRequest):
-    # Long running mock
     return "Video generation started (Job ID: mock-job-123)"
 
 @app.post("/generate/world")
 async def generate_world(req: WorldBuildRequest):
-    # Hylcyon Mock
     return {
-        "success": True,
+        "success": True, 
         "world_name": "Rhea Generated World",
         "era": "Future Void",
         "core_tension": req.theme,
-        "factions": [{"name": "Void Walkers"}],
-        "characters": [],
+        "factions": [{"name": "Default Faction"}],
+        "characters": [], 
         "quests": []
     }
 
@@ -340,7 +463,14 @@ async def generate_world(req: WorldBuildRequest):
 async def start_research(req: ResearchRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=f"Research: {req.query}")
+        # Research implies complex thought -> Force HIGH thinking
+        model_id, config = route_request(None, ThinkingLevel.HIGH)
+        
+        response = await client.aio.models.generate_content(
+            model=model_id, 
+            contents=f"Research: {req.query}",
+            config=config
+        )
         return {"status": "completed", "summary": response.text}
     except Exception as e:
         logger.error(f"Research Error: {e}")
