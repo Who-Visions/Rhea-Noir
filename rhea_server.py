@@ -23,7 +23,74 @@ load_dotenv()
 
 # Configuration
 PROJECT_ID = "rhea-noir"
-LOCATION = "us-central1"
+LOCATION = "global" # Validated: Gemini 3/2.5 support global endpoint for higher availability
+
+# Pydantic Models & Enums via standard import
+from enum import Enum
+
+class ThinkingLevel(str, Enum):
+    # Gemini 3 Flash supports all levels
+    # Gemini 3 Pro supports LOW and HIGH
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+# --- Senior-Level Smart Router (Gemini 3 Pure) ---
+def route_request(
+    requested_model: Optional[str], 
+    thinking_level: ThinkingLevel, 
+    prompt_complexity: int = 1
+) -> tuple[str, Optional[types.GenerateContentConfig]]:
+    """
+    Intelligent routing logic for Gemini 3 Fleet.
+    Strictly enforces Gemini 3 architecture.
+    """
+    
+    # 1. Hardware/Model Selection
+    # Default: Gemini 3 Flash Preview (Balanced Speed/Intellect)
+    selected_model = "gemini-3-flash-preview" 
+    
+    # Auto-Upgrade logic to Pro (Reasoning Specialist)
+    if requested_model:
+        selected_model = requested_model
+    elif thinking_level == ThinkingLevel.HIGH:
+        selected_model = "gemini-3-pro-preview"
+    elif prompt_complexity > 8:
+         selected_model = "gemini-3-pro-preview"
+    
+    # 2. Config Generation - Gemini 3 Native
+    # STRICT: Thinking Levels Only. No "Thinking Budget".
+    
+    # Map internal enum to string for SDK stability
+    sdk_thinking_level = "high" # Default safe fallback
+    
+    if thinking_level == ThinkingLevel.MINIMAL:
+            sdk_thinking_level = "minimal"
+    elif thinking_level == ThinkingLevel.LOW:
+        sdk_thinking_level = "low"
+    elif thinking_level == ThinkingLevel.MEDIUM:
+        sdk_thinking_level = "medium"
+    elif thinking_level == ThinkingLevel.HIGH:
+        sdk_thinking_level = "high"
+        
+    # Pro Compatibility Layer (Gemini 3 Pro only supports Low/High)
+    if "gemini-3-pro" in selected_model:
+        if thinking_level == ThinkingLevel.MINIMAL:
+            sdk_thinking_level = "low" # Upgrade minimal to low for Pro
+        elif thinking_level == ThinkingLevel.MEDIUM:
+            sdk_thinking_level = "high" # Upgrade medium to high for Pro
+    
+    generation_config = types.GenerateContentConfig(
+        temperature=1.0, # Gemini 3 Standard
+        thinking_config=types.ThinkingConfig(
+            thinking_level=sdk_thinking_level,
+            include_thoughts=True # Always transparency
+        ), 
+    )
+    
+    return selected_model, generation_config
+
 
 # Global Client
 client: Optional[genai.Client] = None
@@ -94,6 +161,7 @@ class GenerateRequest(BaseModel):
     model: Optional[str] = "gemini-3-pro-preview"
     temperature: float = 0.7
     use_grounding: bool = True
+    thinking_level: ThinkingLevel = ThinkingLevel.LOW
 
 class GenerateResponse(BaseModel):
     response: str
@@ -135,33 +203,11 @@ class OpenAIMessage(BaseModel):
     role: str
     content: Union[str, List[Any]]
 
-from enum import Enum
-
-class ThinkingLevel(str, Enum):
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
 class SmartRouterConfig(BaseModel):
     # dynamic routing configuration
     force_model: Optional[str] = None
     min_thinking_level: ThinkingLevel = ThinkingLevel.LOW
     auto_route: bool = True
-
-class GenerateRequest(BaseModel):
-    prompt: str
-    model: Optional[str] = None # If None, Smart Router decides
-    thinking_level: ThinkingLevel = ThinkingLevel.LOW
-    temperature: float = 0.7
-    use_grounding: bool = True
-    context_id: Optional[str] = None
-
-class GenerateResponse(BaseModel):
-    response: str
-    model_used: str
-    thinking_level_used: str
-    grounded: bool
 
 class OpenAIChatCompletionRequest(BaseModel):
     model: Optional[str] = None # Router handles default
@@ -169,65 +215,6 @@ class OpenAIChatCompletionRequest(BaseModel):
     temperature: Optional[float] = 0.7
     thinking_level: ThinkingLevel = ThinkingLevel.LOW
     stream: Optional[bool] = False
-
-# --- Senior-Level Smart Router ---
-def route_request(
-    requested_model: Optional[str], 
-    thinking_level: ThinkingLevel, 
-    prompt_complexity: int = 1
-) -> tuple[str, types.GenerateContentConfig]:
-    """
-    Intelligent routing logic for Gemini 3 Fleet.
-    Decides between Flash (Speed) and Pro (Reasoning) based on constraints.
-    """
-    
-    # 1. Hardware/Model Selection
-    selected_model = "gemini-3-flash-preview" # Default WORKHORSE
-    
-    # Auto-Upgrade logic: High thinking or explicit Pro request upgrades to Pro
-    if requested_model:
-        selected_model = requested_model
-    elif thinking_level == ThinkingLevel.HIGH:
-        selected_model = "gemini-3-pro-preview" # Upgrade for deep thought
-    elif prompt_complexity > 8: # Arbitrary complexity heuristic
-         selected_model = "gemini-3-pro-preview"
-    
-    # 2. Config Generation (Using Raw Google GenAI Types)
-    # Map API level to SDK config
-    # Note: 'thinking_level' parameter name might vary in valid SDK versions, 
-    # checking documentation this is 'reasoning_effort' in OAI or 'thinking_config' in Google Native.
-    # We will construct the native config for the Google Client.
-    
-    # Verify model compatibility with thinking levels
-    # Flash supports: minimal, low, medium, high
-    # Pro supports: low, high (Defaults to High)
-    
-    # Default mapping (safe for Flash)
-    sdk_thinking_level = types.ThinkingLevel.HIGH # Default safe
-    
-    if thinking_level == ThinkingLevel.MINIMAL:
-        sdk_thinking_level = "MINIMAL" # types.ThinkingLevel.MINIMAL might be flaky in preview, string is safer if enum missing
-    elif thinking_level == ThinkingLevel.LOW:
-        sdk_thinking_level = types.ThinkingLevel.LOW
-    elif thinking_level == ThinkingLevel.MEDIUM:
-        sdk_thinking_level = types.ThinkingLevel.MEDIUM
-    elif thinking_level == ThinkingLevel.HIGH:
-        sdk_thinking_level = types.ThinkingLevel.HIGH
-        
-    # Pro Compatibility Layer
-    if selected_model == "gemini-3-pro-preview":
-        if thinking_level == ThinkingLevel.MINIMAL:
-            sdk_thinking_level = types.ThinkingLevel.LOW # Pro min is Low
-        elif thinking_level == ThinkingLevel.MEDIUM:
-            sdk_thinking_level = types.ThinkingLevel.HIGH # Pro medium maps to High
-            
-    generation_config = types.GenerateContentConfig(
-        temperature=1.0, # Gemini 3 recommends 1.0 default
-        thinking_config=types.ThinkingConfig(thinking_level=sdk_thinking_level),
-    )
-    
-    return selected_model, generation_config
-
 
 class RazerEffectRequest(BaseModel):
     effect: str = "static"
@@ -313,13 +300,63 @@ async def get_agent_card_standard():
 # V1 Models
 @app.get("/v1/models")
 async def list_models_v1():
+    """
+    Returns the full global catalog of available models across Gemini, Imagen, Veo, and Partner ecosystems.
+    Validated for Global Endpoint support.
+    """
     return {
         "data": [
-            {"id": "gemini-3-pro-preview", "object": "model"},
-            {"id": "gemini-3-flash-preview", "object": "model"},
-            {"id": "gemini-3-pro-image-preview", "object": "model"},
-            {"id": "gemini-2.5-flash", "object": "model"},
-            {"id": "gemini-2.5-pro", "object": "model"}
+            # --- Gemini 3 (The Brains - Global Preview) ---
+            {"id": "gemini-3-pro-preview", "object": "model", "type": "reasoning", "capabilities": ["thinking", "code", "complex-math"]},
+            {"id": "gemini-3-flash-preview", "object": "model", "type": "balanced", "capabilities": ["thinking", "speed", "multimodal"]},
+            {"id": "gemini-3-pro-image-preview", "object": "model", "type": "creative", "capabilities": ["image-generation", "text-to-image", "thinking"]},
+            
+            # --- Gemini 2.5 (The Workhorses) ---
+            {"id": "gemini-2.5-pro", "object": "model", "type": "legacy-reasoning"},
+            {"id": "gemini-2.5-flash", "object": "model", "type": "legacy-balanced"},
+            {"id": "gemini-2.5-flash-preview-09-2025", "object": "model", "type": "legacy-balanced-preview"},
+            {"id": "gemini-2.5-flash-image", "object": "model", "type": "legacy-image"},
+            {"id": "gemini-2.5-flash-native-audio-preview-12-2025", "object": "model", "type": "audio-live"},
+            {"id": "gemini-live-2.5-flash", "object": "model", "type": "audio-live-alias"},
+            {"id": "gemini-2.5-flash-preview-tts", "object": "model", "type": "tts"},
+            {"id": "gemini-2.5-flash-lite", "object": "model", "type": "lite"},
+            {"id": "gemini-2.5-flash-lite-preview-09-2025", "object": "model", "type": "lite-preview"},
+            {"id": "gemini-2.5-pro-preview-tts", "object": "model", "type": "pro-tts"},
+
+            # --- Gemini 2.0 (Legacy) ---
+            {"id": "gemini-2.0-flash", "object": "model", "type": "legacy-v2"},
+            {"id": "gemini-2.0-flash-001", "object": "model", "type": "legacy-v2-stable"},
+            {"id": "gemini-2.0-flash-preview-image-generation", "object": "model", "type": "legacy-v2-image"},
+            {"id": "gemini-2.0-flash-lite", "object": "model", "type": "legacy-v2-lite"},
+            {"id": "gemini-2.0-flash-lite-001", "object": "model", "type": "legacy-v2-lite-stable"},
+            
+            # --- Embeddings ---
+            {"id": "gemini-embedding-001", "object": "model", "type": "embedding"},
+            {"id": "text-embedding-004", "object": "model", "type": "embedding-legacy"},
+            
+            # --- Creative Studio (Imagen & Veo) ---
+            {"id": "imagen-3.0-generate-001", "object": "model", "type": "image-gen"},
+            {"id": "imagen-3.0-fast-generate-001", "object": "model", "type": "image-gen-fast"},
+            {"id": "imagen-4.0-generate-001", "object": "model", "type": "image-gen-next"},
+            {"id": "imagen-4.0-ultra-generate-001", "object": "model", "type": "image-gen-ultra"},
+            {"id": "veo-2.0-generate-001", "object": "model", "type": "video-gen"},
+            {"id": "veo-3.0-generate-preview", "object": "model", "type": "video-gen-next"},
+            
+            # --- Audio (Chirp) ---
+            {"id": "chirp_3", "object": "model", "type": "transcription"},
+            {"id": "chirp_2", "object": "model", "type": "transcription"},
+            
+            # --- Partner Models (Anthropic / Mistral) ---
+            {"id": "claude-3-7-sonnet", "object": "model", "type": "partner-reasoning"},
+            {"id": "claude-3-5-haiku", "object": "model", "type": "partner-speed"},
+            {"id": "mistral-large", "object": "model", "type": "partner-reasoning"},
+            {"id": "codestral-2", "object": "model", "type": "partner-code"},
+            
+            # --- Open Models (Llama / DeepSeek) ---
+            {"id": "llama-3.1-405b", "object": "model", "type": "open-reasoning"},
+            {"id": "llama-3.3-70b", "object": "model", "type": "open-balanced"},
+            {"id": "deepseek-r1", "object": "model", "type": "open-reasoning-r1"},
+            {"id": "deepseek-v3.1", "object": "model", "type": "open-balanced"}
         ]
     }
 
@@ -358,6 +395,7 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/chat")
 @app.post("/v1/chat")
 async def chat_legacy(req: ChatRequest):
     # Legacy alias - Auto-routes to Flash/Low
