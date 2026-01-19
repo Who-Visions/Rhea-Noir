@@ -91,7 +91,7 @@ class ExecuteCodeRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     prompt: str
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-3-flash-preview"
     temperature: float = 0.7
     use_grounding: bool = True
 
@@ -136,7 +136,7 @@ class OpenAIMessage(BaseModel):
     content: Union[str, List[Any]]
 
 class OpenAIChatCompletionRequest(BaseModel):
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-3-flash-preview"
     messages: List[OpenAIMessage]
     temperature: Optional[float] = 0.7
     stream: Optional[bool] = False
@@ -229,9 +229,9 @@ async def list_models_v1():
         "data": [
             {"id": "gemini-3-pro-preview", "object": "model"},
             {"id": "gemini-3-flash-preview", "object": "model"},
+            {"id": "gemini-3-pro-image-preview", "object": "model"},
             {"id": "gemini-2.5-flash", "object": "model"},
-            {"id": "gemini-2.5-pro", "object": "model"},
-            {"id": "imagen-3.0", "object": "model"}
+            {"id": "gemini-2.5-pro", "object": "model"}
         ]
     }
 
@@ -249,14 +249,14 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
         if isinstance(last_msg, list): last_msg = str(last_msg)
         
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents=last_msg
         )
         return {
             "id": "chatcmpl-rhea",
             "object": "chat.completion",
             "created": int(datetime.now().timestamp()),
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3-flash-preview",
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": response.text},
@@ -302,15 +302,18 @@ async def fleet_generate(req: GenerateRequest):
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
-    if not client: raise HTTPException(status_code=503)
+    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_images(
-            model="imagen-3.0-generate-001",
-            prompt=req.prompt,
-            config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="16:9")
+        response = await client.aio.models.generate_content(
+            model="gemini-3-pro-image-preview",
+            contents=req.prompt,
+            config=types.GenerateContentConfig(
+                image_config=types.ImageConfig(aspect_ratio="16:9", image_size="4K"),
+                tools=[{"google_search": {}}]
+            )
         )
-        # Mock return for A2A
-        return "Image Generated (Base64/Url Placeholder)"
+        # Mock return for A2A - actual return needs handling of inline_data
+        return "Image Generated (Base64/Url Placeholder - Gemini 3 Pro Image)"
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -337,7 +340,7 @@ async def generate_world(req: WorldBuildRequest):
 async def start_research(req: ResearchRequest):
     if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
-        response = await client.aio.models.generate_content(model="gemini-2.5-flash", contents=f"Research: {req.query}")
+        response = await client.aio.models.generate_content(model="gemini-3-flash-preview", contents=f"Research: {req.query}")
         return {"status": "completed", "summary": response.text}
     except Exception as e:
         logger.error(f"Research Error: {e}")
