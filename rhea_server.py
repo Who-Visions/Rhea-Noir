@@ -11,7 +11,11 @@ from dotenv import load_dotenv
 import asyncio
 import base64
 from datetime import datetime
+import asyncio
+import base64
+from datetime import datetime
 import logging
+import httpx # Async HTTP Client for Kaedra Bridge
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +27,10 @@ load_dotenv()
 
 # Configuration
 PROJECT_ID = "rhea-noir"
+PROJECT_ID = "rhea-noir"
 LOCATION = "global" # Validated: Gemini 3/2.5 support global endpoint for higher availability
+KAEDRA_SERVICE_URL = "https://kaedra-69017097813.us-central1.run.app"
+
 
 # Pydantic Models & Enums via standard import
 from enum import Enum
@@ -146,7 +153,26 @@ class ChatResponse(BaseModel):
     agent_name: str
     model: str
     latency_ms: float
+class ChatResponse(BaseModel):
+    response: str
+    agent_name: str
+    model: str
+    latency_ms: float
     timestamp: float
+
+class CowriteRequest(BaseModel):
+    prompt: str
+    context: Optional[str] = None
+    max_turns: Optional[int] = 3
+    mode: Optional[str] = "narrative"
+    thinking_level: Optional[str] = "low"
+
+class CowriteResponse(BaseModel):
+    content: str
+    turns_completed: int
+    participating_agents: List[str]
+    status: str
+
 
 class EmbeddingRequest(BaseModel):
     text: str
@@ -236,6 +262,11 @@ class StorySessionRequest(BaseModel):
     world_id: str = "world_default"
     mode: str = "writer"
     prompt: Optional[str] = None
+
+# Ingestion
+class IngestRequest(BaseModel):
+    content: str
+    hint: Optional[str] = ""
 
 class SyncRequest(BaseModel):
     world_id: str = "world_default"
@@ -580,6 +611,27 @@ async def create_story_session(req: StorySessionRequest):
 async def get_story_session(session_id: str):
     return "Session Details"
 
+# Ingest Endpoint
+print("DEBUG: Registering /v1/ingest route...")
+@app.post("/v1/ingest")
+async def ingest_content(req: IngestRequest, background_tasks: BackgroundTasks):
+    """
+    Ingest transcripts or notes into the VeilVerse Notion DB.
+    Uses 'services/ingestor.py' logic (LLM extraction).
+    Accepts raw text OR a URL (if handled by IngestorService).
+    """
+    from services.ingestor import IngestorService
+    
+    # We run this in background or await if fast? 
+    # Let's await to give immediate feedback on success/failure for now
+    service = IngestorService()
+    success = await service.ingest_transcript(req.content, req.hint)
+    
+    if success:
+        return {"status": "success", "message": "Content ingested into VeilVerse"}
+    else:
+        raise HTTPException(status_code=500, detail="Ingestion failed (Check server logs)")
+
 @app.post("/story/generate")
 async def generate_story_content(req: StoryGenerateRequest):
     return "Story Content Generated"
@@ -644,11 +696,30 @@ async def pubsub_webhook(): return "Ack"
 
 # Custom - CoWrite (Preserved)
 @app.post("/cowrite")
-async def cowrite(req: dict):
-    # Simplified alias for generating creative text
-    # In Kaedra this might be part of story/generate, but we keep it for CLI tool access if needed
-    # using generate endpoint logic roughly
-    return {"status": "Use /generate or /story/generate"}
+async def cowrite(req: CowriteRequest):
+    """
+    Rhea x Kaedra Bridge.
+    Forwards the cowrite session to the remote Kaedra "Shadow Tactician" Cloud Agent.
+    """
+    if not KAEDRA_SERVICE_URL:
+        raise HTTPException(status_code=503, detail="Kaedra Service URL not configured")
+        
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{KAEDRA_SERVICE_URL}/cowrite",
+                json=req.model_dump(),
+                headers={"Content-Type": "application/json"}
+            )
+            resp.raise_for_status()
+            return resp.json()
+            
+    except httpx.HTTPStatusError as e:
+         logger.error(f"Kaedra Bridge Error: {e.response.text}")
+         raise HTTPException(status_code=e.response.status_code, detail=f"Kaedra Rejected: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Cowrite Connection Error: {e}")
+        return JSONResponse(status_code=502, content={"detail": f"Kaedra Unreachable: {str(e)}"})
 
 
 if __name__ == "__main__":
