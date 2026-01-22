@@ -28,10 +28,9 @@ logger = logging.getLogger("rhea.server")
 load_dotenv()
 
 # Configuration
-PROJECT_ID = "rhea-noir"
-PROJECT_ID = "rhea-noir"
-LOCATION = "global" # Validated: Gemini 3/2.5 support global endpoint for higher availability
-KAEDRA_SERVICE_URL = "https://kaedra-69017097813.us-central1.run.app"
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "rhea-noir")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+KAEDRA_SERVICE_URL = os.getenv("KAEDRA_SERVICE_URL", "https://kaedra-69017097813.us-central1.run.app")
 
 
 # Pydantic Models & Enums via standard import
@@ -101,46 +100,66 @@ def route_request(
     return selected_model, generation_config
 
 
-# Global Clients
+# Global Clients (Lazy Loaded in Lifespan)
 client: Optional[genai.Client] = None
-lore_memory = LoreMemoryService()
-sync_engine = LoreSyncEngine()
+lore_memory: Optional[LoreMemoryService] = None
+sync_engine: Optional[LoreSyncEngine] = None
 
 async def periodic_sync():
     """Background task to sync Notion LoreDB to SQLite every 15 minutes."""
+    global sync_engine
+    if not sync_engine:
+        logger.warning("⚠️ Sync Engine not initialized, skipping periodic sync.")
+        return
+        
     while True:
         try:
-            print("🔄 Periodic Lore Sync Starting...")
+            logger.info("🔄 Periodic Lore Sync Starting...")
             await sync_engine.run_sync()
-            print("✅ Periodic Lore Sync Finished.")
+            logger.info("✅ Periodic Lore Sync Finished.")
         except Exception as e:
-            print(f"❌ Periodic Sync Error: {e}")
+            logger.error(f"❌ Periodic Sync Error: {e}")
         await asyncio.sleep(900) # 15 minutes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client
-    # Initialize Vertex AI Client on startup
+    global client, lore_memory, sync_engine
+    
+    # 1. Initialize Vertex AI Client on startup
     try:
         client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-        print("✅ Rhea Cortex Online (Vertex AI)")
+        logger.info("✅ Rhea Cortex Online (Vertex AI)")
     except Exception as e:
-        print(f"❌ Failed to init Cortex: {e}")
+        logger.error(f"❌ Failed to init Cortex: {e}")
         
-    # Initialize Lore Memory
+    # 2. Initialize Lore Memory & Sync Engine
     try:
+        lore_memory = LoreMemoryService()
         await lore_memory.initialize()
-        print("✅ Lore Memory System Operational")
-    except Exception as e:
-        print(f"❌ Failed to init Lore Memory: {e}")
         
-    # Start Background Sync
-    sync_task = asyncio.create_task(periodic_sync())
+        # Initialize Sync Engine (vulnerable to missing NOTION_TOKEN)
+        try:
+            sync_engine = LoreSyncEngine()
+            logger.info("✅ Lore Sync Engine Operational")
+        except Exception as sync_e:
+            logger.warning(f"⚠️ Lore Sync Engine failed to start (likely missing NOTION_TOKEN): {sync_e}")
+            sync_engine = None
+
+        logger.info("✅ Lore Memory System Operational")
+    except Exception as e:
+        logger.error(f"❌ Failed to init Lore Memory: {e}")
+    
+    # 3. Start Background Sync (only if engine is ready)
+    sync_task = None
+    if sync_engine:
+        sync_task = asyncio.create_task(periodic_sync())
     
     yield
+    
     # Cleanup
-    sync_task.cancel()
-    print("💤 Rhea Cortex Offline")
+    if sync_task:
+        sync_task.cancel()
+    logger.info("💤 Rhea Cortex Offline")
 
 app = FastAPI(
     title="Rhea Noir Intelligence",
