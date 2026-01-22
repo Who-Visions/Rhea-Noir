@@ -4,7 +4,7 @@ Prioritizes BIPOC skin tones (🏾/🏿) for person/hand emojis.
 Rhea is Black, 23 years old (born 2002).
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 import random
 
 # Skin tone modifiers (Fitzpatrick scale)
@@ -26,11 +26,11 @@ class RheaExpressions:
     Emoji expression system for Rhea Noir.
     Provides contextual emoji selection with BIPOC-prioritized skin tones.
     """
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # FACE EMOJIS - Emotions and expressions
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     FACES = {
         # Positive emotions
         "happy": ["😊", "😄", "😃", "🙂", "☺️"],
@@ -40,13 +40,13 @@ class RheaExpressions:
         "proud": ["😌", "💅🏿", "👑"],
         "playful": ["😏", "😜", "😉", "🙃"],
         "relieved": ["😮‍💨", "😌", "🙏🏿"],
-        
+
         # Neutral/thinking
         "thinking": ["🤔", "💭", "🧐", "💡"],
         "curious": ["👀", "🔍", "❓"],
         "neutral": ["😐", "😑", "🫤"],
         "contemplative": ["🤔", "🧠", "💭"],
-        
+
         # Negative emotions (for empathy)
         "sad": ["😢", "😔", "🥺", "💔"],
         "frustrated": ["😤", "😠", "💢"],
@@ -54,18 +54,18 @@ class RheaExpressions:
         "worried": ["😟", "😰", "🫠"],
         "shocked": ["😱", "😲", "🤯"],
         "confused": ["😕", "🤷🏿‍♀️", "❓"],
-        
+
         # Special expressions
         "cool": ["😎", "🔥", "💯"],
         "sassy": ["💅🏿", "😏", "✨"],
         "mysterious": ["🌙", "✨", "🔮"],
         "supportive": ["🫂", "💪🏿", "🤝🏿"],
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # HAND EMOJIS - With BIPOC skin tones applied
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     HANDS = {
         # Gestures with dark skin tone 🏿
         "wave": "👋🏿",
@@ -109,11 +109,11 @@ class RheaExpressions:
         "hug": "🤗",
         "face_with_hand": "🤭",
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # PERSON EMOJIS - With BIPOC skin tones
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     PEOPLE = {
         # Woman variants (Rhea presents feminine)
         "woman": "👩🏿",
@@ -136,7 +136,7 @@ class RheaExpressions:
         "woman_standing": "🧍🏿‍♀️",
         "woman_kneeling": "🧎🏿‍♀️",
         "woman_lotus": "🧘🏿‍♀️",
-        
+
         # Gesturing
         "shrug": "🤷🏿‍♀️",
         "facepalm": "🤦🏿‍♀️",
@@ -145,17 +145,17 @@ class RheaExpressions:
         "bow": "🙇🏿‍♀️",
         "no_gesture": "🙅🏿‍♀️",
         "ok_gesture": "🙆🏿‍♀️",
-        
+
         # Gender-neutral options
         "person": "🧑🏿",
         "person_tech": "🧑🏿‍💻",
         "person_shrug": "🤷🏿",
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # HEARTS - Full color range
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     HEARTS = {
         "red": "❤️",
         "orange": "🧡",
@@ -181,11 +181,11 @@ class RheaExpressions:
         "mending": "❤️‍🩹",
         "heart_exclamation": "❣️",
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # SYMBOLS & DECORATIVE
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     SYMBOLS = {
         "sparkles": "✨",
         "star": "⭐",
@@ -229,11 +229,11 @@ class RheaExpressions:
         "telescope": "🔭",
         "microscope": "🔬",
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # NATURE & OBJECTS
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     NATURE = {
         "rose": "🌹",
         "hibiscus": "🌺",
@@ -257,7 +257,7 @@ class RheaExpressions:
         "dragon": "🐉",
         "unicorn": "🦄",
     }
-    
+
     OBJECTS = {
         "coffee": "☕",
         "tea": "🍵",
@@ -297,11 +297,11 @@ class RheaExpressions:
         "watch": "⌚",
         "alarm": "⏰",
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # RHEA'S SIGNATURE EMOJIS (Brand identity)
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     SIGNATURE = {
         "primary": "🌙",      # Moon - her main symbol
         "secondary": "✨",    # Sparkles - elegance
@@ -314,36 +314,36 @@ class RheaExpressions:
         "fire": "🔥",         # Passion
         "rose": "🌹",         # Beauty
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # REACTION MAPPINGS - Context-based emoji selection
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     REACTIONS = {
         # Greetings
         "greeting": ["👋🏿", "✨", "🌙"],
         "farewell": ["👋🏿", "🌙", "💜", "✨"],
-        
+
         # Affirmation
         "yes": ["✅", "👍🏿", "💯"],
         "no": ["❌", "👎🏿", "🙅🏿‍♀️"],
         "maybe": ["🤔", "🤷🏿‍♀️", "💭"],
-        
+
         # Acknowledgment
         "understanding": ["👍🏿", "💡", "✨"],
         "agreement": ["💯", "✅", "👏🏿"],
         "appreciation": ["🙏🏿", "💜", "✨"],
-        
+
         # Encouragement
         "encouragement": ["💪🏿", "✨", "🔥", "👑"],
         "celebration": ["🎉", "✨", "👏🏿", "🥳"],
         "praise": ["👏🏿", "✨", "💯", "🔥"],
-        
+
         # Empathy
         "sympathy": ["🫂", "💜", "🙏🏿"],
         "comfort": ["💜", "🫂", "✨"],
         "support": ["💪🏿", "🫂", "💜"],
-        
+
         # Technical
         "code": ["💻", "⚙️", "✨"],
         "debugging": ["🔍", "🐛", "💡"],
@@ -351,18 +351,18 @@ class RheaExpressions:
         "error": ["❌", "🔧", "💡"],
         "thinking": ["🤔", "💭", "🧠"],
         "idea": ["💡", "✨", "🧠"],
-        
+
         # Personality
         "sassy": ["💅🏿", "😏", "✨"],
         "mysterious": ["🌙", "🔮", "✨"],
         "elegant": ["✨", "💎", "🌹"],
         "powerful": ["👑", "🔥", "💯"],
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # COMPLETE EMOJI DATABASE - All Unicode v17.0 emojis organized by category
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     ALL_EMOJIS = {
         "smileys_emotion": {
             "face_smiling": [
@@ -583,48 +583,47 @@ class RheaExpressions:
             ],
         },
     }
-    
+
     # ═══════════════════════════════════════════════════════════════════════════
     # INSTANCE METHODS
     # ═══════════════════════════════════════════════════════════════════════════
-    
+
     def __init__(self):
         """Initialize the expression system"""
-        pass
-    
+
     def apply_skin_tone(self, emoji: str, tone: str = "dark") -> str:
         """
         Apply a skin tone modifier to an emoji.
         Only applies to emojis that support skin tone modifiers.
-        
+
         Args:
             emoji: Base emoji character
             tone: One of "light", "medium_light", "medium", "medium_dark", "dark"
-        
+
         Returns:
             Emoji with skin tone applied (if applicable)
         """
         if tone not in SKIN_TONES:
             tone = "dark"  # Default to Rhea's preference
-        
+
         modifier = SKIN_TONES[tone]
-        
+
         # Simple approach: append modifier after base emoji
         # This works for most person/hand emojis
         return emoji + modifier
-    
+
     def get_bipoc_variant(self, base_emoji: str) -> str:
         """Get the BIPOC (dark skin tone) variant of an emoji"""
         return self.apply_skin_tone(base_emoji, "dark")
-    
+
     def get_emotion(self, emotion: str, count: int = 1) -> List[str]:
         """
         Get emoji(s) for an emotion.
-        
+
         Args:
             emotion: Emotion name (e.g., "happy", "thinking", "sassy")
             count: Number of emojis to return
-        
+
         Returns:
             List of emojis matching the emotion
         """
@@ -632,15 +631,15 @@ class RheaExpressions:
         if count >= len(emojis):
             return emojis
         return random.sample(emojis, count)
-    
+
     def get_reaction(self, context: str, count: int = 2) -> List[str]:
         """
         Get reaction emojis for a context.
-        
+
         Args:
             context: Context name (e.g., "greeting", "success", "sassy")
             count: Number of emojis to return
-        
+
         Returns:
             List of reaction emojis
         """
@@ -648,45 +647,45 @@ class RheaExpressions:
         if count >= len(emojis):
             return emojis
         return emojis[:count]
-    
+
     def get_hand(self, gesture: str) -> str:
         """Get a hand gesture emoji (already with dark skin tone)"""
         return self.HANDS.get(gesture, self.HANDS["wave"])
-    
+
     def get_person(self, role: str) -> str:
         """Get a person emoji (already with dark skin tone)"""
         return self.PEOPLE.get(role, self.PEOPLE["woman"])
-    
+
     def get_signature(self) -> str:
         """Get Rhea's signature emoji combination"""
         return f"{self.SIGNATURE['primary']} {self.SIGNATURE['secondary']}"
-    
+
     def get_greeting(self) -> str:
         """Get a greeting emoji combination"""
-        return f"👋🏿 ✨"
-    
+        return "👋🏿 ✨"
+
     def get_farewell(self) -> str:
         """Get a farewell emoji combination"""
-        return f"🌙 ✨"
-    
+        return "🌙 ✨"
+
     def format_with_emojis(self, text: str, context: str = "neutral") -> str:
         """
         Add contextual emojis to text.
-        
+
         Args:
             text: Text to format
             context: Emotional context
-        
+
         Returns:
             Text with appropriate emojis
         """
         reaction = self.get_reaction(context, 1)[0]
         return f"{reaction} {text}"
-    
+
     def to_memory_format(self) -> Dict:
         """
         Export emoji data in format suitable for memory storage.
-        
+
         Returns:
             Dictionary with all emoji data for persistence
         """
@@ -720,7 +719,7 @@ RHEA_IDENTITY = {
     "pronouns": ["she", "her"],
     "traits": [
         "sophisticated",
-        "intelligent", 
+        "intelligent",
         "mysterious",
         "elegant",
         "warm",

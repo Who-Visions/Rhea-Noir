@@ -1,3 +1,7 @@
+"""
+Rhea Noir Module: actions.py
+Auto-generated docstring.
+"""
 import os
 import requests
 from typing import Dict, Any, List, Optional
@@ -21,13 +25,13 @@ class TmdbSkill(Skill):
     def execute(self, action: str, **kwargs) -> Dict[str, Any]:
         api_key = os.getenv("TMDB_API_KEY")
         read_token = os.getenv("TMDB_READ_TOKEN")
-        
+
         # Prefer Read Token (Bearer) if available, else API Key
         self.headers = {
             "Authorization": f"Bearer {read_token}",
             "Content-Type": "application/json;charset=utf-8"
         } if read_token else {}
-        
+
         self.params = {"api_key": api_key} if not read_token else {}
 
         if not api_key and not read_token:
@@ -49,22 +53,22 @@ class TmdbSkill(Skill):
 
     def _search_movie(self, query: str, year: Optional[str] = None) -> Dict[str, Any]:
         if not query: return self._error("Query is required")
-        
+
         url = f"{self.BASE_URL}/search/movie"
         params = {**self.params, "query": query}
         if year:
             params["year"] = year
-            
+
         resp = requests.get(url, headers=self.headers, params=params)
         resp.raise_for_status()
-        
+
         return self._success(resp.json())
 
     def _discover_movies(self, start_date: str, end_date: str, page: int = 1) -> Dict[str, Any]:
         """Discover movies released within a date range (YYYY-MM-DD)"""
         if not start_date or not end_date:
             return self._error("start_date and end_date required")
-            
+
         url = f"{self.BASE_URL}/discover/movie"
         # US region for theatrical releases
         params = {
@@ -77,46 +81,46 @@ class TmdbSkill(Skill):
             "include_adult": False,
             "page": page
         }
-        
+
         resp = requests.get(url, headers=self.headers, params=params)
         resp.raise_for_status()
         return self._success(resp.json())
 
     def _get_movie_details(self, tmdb_id: int) -> Dict[str, Any]:
         if not tmdb_id: return self._error("tmdb_id is required")
-        
+
         # Append extra info: credits (cast/crew), release_dates (certification), external_ids (imdb), keywords
         url = f"{self.BASE_URL}/movie/{tmdb_id}"
         params = {**self.params, "append_to_response": "credits,release_dates,external_ids,keywords,videos"}
-        
+
         resp = requests.get(url, headers=self.headers, params=params)
         resp.raise_for_status()
-        
+
         data = resp.json()
-        
+
         # Process data for easier consumption
         processed = self._process_movie_data(data)
-        
+
         return self._success(processed)
 
     def _process_movie_data(self, data: Dict) -> Dict:
         """Helper to extract and format key fields for Notion"""
-        
+
         # Base URLs for images (using original quality)
         poster_path = data.get("poster_path")
         backdrop_path = data.get("backdrop_path")
-        
+
         # Credits
         cast = sorted(data.get("credits", {}).get("cast", []), key=lambda x: x['order'])[:10]
         crew = data.get("credits", {}).get("crew", [])
-        
+
         directors = [c['name'] for c in crew if c['job'] == 'Director']
         producers = [c['name'] for c in crew if c['job'] == 'Producer']
         writers = [c['name'] for c in crew if c['job'] in ['Screenplay', 'Writer']]
         editors = [c['name'] for c in crew if c['job'] == 'Editor']
         dp = [c['name'] for c in crew if c['job'] == 'Director of Photography']
         composers = [c['name'] for c in crew if c['job'] == 'Original Music Composer']
-        
+
         # Certification (MPAA) - US priority
         certification = ""
         releases = data.get("release_dates", {}).get("results", [])
@@ -126,7 +130,7 @@ class TmdbSkill(Skill):
                     if d['certification']:
                         certification = d['certification']
                         break
-        
+
         # Processed entry
         return {
             "tmdb_id": data.get("id"),

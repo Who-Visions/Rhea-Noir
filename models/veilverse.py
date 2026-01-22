@@ -31,7 +31,7 @@ class VeilEntity(BaseModel):
     Represents a core entity in the VeilVerse Universe Database.
     Mapped from Notion Database: 'VeilVerse Universe Best'
     """
-    notion_id: str = Field(..., description="The Notion Page ID")
+    notion_id: Optional[str] = Field(None, description="The Notion Page ID")
     name: str = Field(..., description="The Title/Name of the entity")
     description: Optional[str] = Field(None, description="Short textual description or flavor text")
     

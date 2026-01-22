@@ -198,14 +198,22 @@ SKILL_CATALOG = {
     },
     # Development
     "flutter": {
+        "skill": "flutter_vibe",  # Use flutter_vibe skill
         "triggers": [
-            "flutter", 
-            "dart", 
-            "create app", 
-            "mobile app", 
+            "flutter",
+            "dart",
+            "create app",
+            "mobile app",
             "generate widget",
-            "vibe code"
+            "vibe code",
+            "scaffold app",
+            "generate screen",
+            "generate feature",
+            "flutter review",
+            "explain dart",
+            "riverpod",
+            "go_router",
         ],
-        "description": "Vibe-Coded Flutter development",
+        "description": "Vibe-Coded Flutter development (Riverpod, GoRouter, Material 3)",
     },
 }

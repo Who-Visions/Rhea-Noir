@@ -74,7 +74,7 @@ If no skill matches, use: {{"skill": null, "reason": "explanation"}}"""
             result = json.loads(response.text)
             result["confidence"] = 0.9
             result["method"] = "gemini-flash"
-            
+
             # Determine tier
             result["tier"] = self._determine_tier(result.get("skill"))
 

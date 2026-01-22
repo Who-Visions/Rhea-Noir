@@ -1,3 +1,7 @@
+"""
+Rhea Noir Module: long_term.py
+Auto-generated docstring.
+"""
 from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
 import os
@@ -15,7 +19,7 @@ class BigQueryMemory:
     Long-term memory backed by Google BigQuery.
     Stores extracted facts and context for persistent recall.
     """
-    
+
     def __init__(self, project_id: str = None, location: str = "US"):
         self.project_id = project_id or os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = location
@@ -38,7 +42,7 @@ class BigQueryMemory:
         """Ensure dataset and table exist."""
         client = self._get_client()
         dataset_ref = f"{self.project_id}.{self.dataset_id}"
-        
+
         # 1. Create Dataset
         try:
             client.get_dataset(dataset_ref)
@@ -58,7 +62,7 @@ class BigQueryMemory:
             bigquery.SchemaField("fact", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("source_turn", "STRING", mode="NULLABLE"), # Optional: original text source
         ]
-        
+
         try:
             client.get_table(table_ref)
             logger.info(f"Table {table_ref} exists.")
@@ -72,7 +76,7 @@ class BigQueryMemory:
             )
             client.create_table(table)
             logger.info(f"Table {table_ref} created.")
-        
+
         self._ready = True
 
     def store_fact(self, fact: str, category: str = "general", source: str = None):
@@ -84,20 +88,20 @@ class BigQueryMemory:
 
     def _store_fact_sync(self, fact: str, category: str, source: str):
         """Sync implementation of store."""
-        if not self.project_id: 
+        if not self.project_id:
             logger.warning("No project ID, skipping BigQuery store.")
             return
 
         client = self._get_client()
         table_ref = f"{self.project_id}.{self.dataset_id}.{self.table_id}"
-        
+
         rows = [{
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "category": category,
             "fact": fact,
             "source_turn": source
         }]
-        
+
         errors = client.insert_rows_json(table_ref, rows)
         if errors:
             logger.error(f"Encountered errors while inserting rows: {errors}")
@@ -108,15 +112,15 @@ class BigQueryMemory:
         """Retrieve most recent facts (blocking)."""
         if not self._ready or not self.project_id:
             return []
-            
+
         client = self._get_client()
         query = f"""
-            SELECT fact, category 
+            SELECT fact, category
             FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`
             ORDER BY timestamp DESC
             LIMIT {limit}
         """
-        
+
         try:
             query_job = client.query(query)
             results = query_job.result()

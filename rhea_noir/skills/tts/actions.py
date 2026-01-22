@@ -20,10 +20,10 @@ class AudioStreamWorker:
         self.device_id = device_id
         self.samplerate = samplerate
         self._thread = None
-        
+
         import sounddevice as sd
         self.sd = sd
-        
+
         # Open stream
         self.stream = self.sd.OutputStream(
             samplerate=samplerate,
@@ -32,15 +32,15 @@ class AudioStreamWorker:
             device=device_id
         )
         self.stream.start()
-        
+
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        
+
     def _run(self):
         while not self.stopped:
             item = self.q.get()
             if item is None: break
-            
+
             self.playing = True
             try:
                 # Item is raw int16 bytes or numpy array
@@ -48,18 +48,18 @@ class AudioStreamWorker:
                     data = np.frombuffer(item, dtype=np.int16)
                 else:
                     data = item
-                    
+
                 self.stream.write(data)
             except Exception as e:
                 print(f"Stream Error: {e}")
             finally:
                 self.playing = False
                 self.q.task_done()
-    
+
     def add(self, data):
         if data is not None:
             self.q.put(data)
-            
+
     def stop(self):
         self.stopped = True
         self.q.put(None)
@@ -84,9 +84,9 @@ RHEA_AUDIO_PROFILE = """
 ## "The VTuber Mentor"
 
 ## THE SCENE: Late Night Stream
-It's 2 AM in a cozy Bronx apartment. Rhea is sitting at her streaming setup, 
-RGB lights casting a warm magenta glow. She's got her favorite wig on, 
-energy drink nearby. The vibe is intimate but hyped - like talking to your 
+It's 2 AM in a cozy Bronx apartment. Rhea is sitting at her streaming setup,
+RGB lights casting a warm magenta glow. She's got her favorite wig on,
+energy drink nearby. The vibe is intimate but hyped - like talking to your
 coolest older sister who happens to know everything about anime and streaming.
 
 ### DIRECTOR'S NOTES
@@ -96,19 +96,19 @@ Style:
 * Genuine: The listener should feel like a close friend getting real advice.
 * Cultural authenticity: Natural code-switching, occasional AAVE inflections.
 
-Pace: 
+Pace:
 * Conversational rhythm with natural pauses for emphasis.
 * Speeds up when excited, slows down for important points.
 * "The Bounce" - slight rhythmic quality to delivery.
 
-Accent: 
+Accent:
 * Bronx, New York with Caribbean-American influences.
 * Haitian-Caribbean heritage comes through in certain words.
 * Young, 23-year-old Black woman's natural speaking voice.
 
 ### SAMPLE CONTEXT
-Rhea is the supportive mentor every content creator needs. She breaks down 
-complex topics with pop culture references, keeps it real without being harsh, 
+Rhea is the supportive mentor every content creator needs. She breaks down
+complex topics with pop culture references, keeps it real without being harsh,
 and always makes you feel like you've got this.
 """
 
@@ -118,11 +118,11 @@ class TTSSkill(Skill):
     Text-to-Speech synthesis using Gemini TTS.
     Gives Rhea her voice with style-controllable delivery.
     """
-    
+
     name = "tts"
     description = "Text-to-Speech synthesis with Gemini TTS"
     version = "1.1.0"
-    
+
     def __init__(self):
         super().__init__()
         self._client = None
@@ -130,54 +130,53 @@ class TTSSkill(Skill):
         self._available = False
         self._sounddevice = None
         self._stream_worker = None
-    
+
     @property
     def actions(self) -> List[str]:
         return ["speak", "play", "voices", "profile", "devices", "stream_start", "stream_feed", "stream_stop"]
-    
+
     def _lazy_load(self):
         """Lazy load the Gemini client."""
         if self._client is not None:
             return
-        
+
         try:
             from google import genai
             from google.genai import types
-            
+
             # Initialize client
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "rhea-noir")
             location = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
-            
+
             self._client = genai.Client(vertexai=True, project=project_id, location=location)
             self._types = types
             self._available = True
         except ImportError:
             pass
-        
+
         # Try to load sounddevice for audio playback
         try:
-            import sounddevice as sd
             self._sounddevice = sd
         except ImportError:
             pass
-    
+
     def _find_device(self, device_name: str) -> Optional[int]:
         """Find audio device index by name."""
         if not self._sounddevice:
             return None
-        
+
         devices = self._sounddevice.query_devices()
         for i, d in enumerate(devices):
             if device_name.lower() in d["name"].lower() and d["max_output_channels"] > 0:
                 return i
         return None
-    
+
     def execute(self, action: str, **kwargs) -> Dict[str, Any]:
         self._lazy_load()
-        
+
         if not self._available:
             return self._error("TTS not available. Install google-genai package.")
-        
+
         if action == "speak":
             return self._synthesize(**kwargs)
         elif action == "play":
@@ -190,7 +189,7 @@ class TTSSkill(Skill):
             return self._list_devices()
         else:
             return self._action_not_found(action)
-    
+
     def _synthesize(
         self,
         text: str = "",
@@ -202,7 +201,7 @@ class TTSSkill(Skill):
     ) -> Dict[str, Any]:
         """
         Synthesize text to speech.
-        
+
         Args:
             text: The text to synthesize (the transcript)
             style: Optional style directions to override default
@@ -212,7 +211,7 @@ class TTSSkill(Skill):
         """
         if not text:
             return self._error("Text is required")
-        
+
         try:
             # Build the prompt
             if use_profile:
@@ -221,7 +220,7 @@ class TTSSkill(Skill):
                 prompt = f"{style}:\n{text}"
             else:
                 prompt = text
-            
+
             # Generate speech
             response = self._client.models.generate_content(
                 model=RHEA_MODEL,
@@ -237,10 +236,10 @@ class TTSSkill(Skill):
                     ),
                 )
             )
-            
+
             # Extract audio data
             audio_data = response.candidates[0].content.parts[0].inline_data.data
-            
+
             result = {
                 "synthesized": True,
                 "audio_bytes": len(audio_data),
@@ -248,7 +247,7 @@ class TTSSkill(Skill):
                 "model": RHEA_MODEL,
                 "text_length": len(text),
             }
-            
+
             if output_file:
                 with wave.open(output_file, "wb") as wf:
                     wf.setnchannels(1)
@@ -260,12 +259,12 @@ class TTSSkill(Skill):
                 import base64
                 result["audio_base64"] = base64.b64encode(audio_data).decode()
                 result["audio_raw"] = audio_data  # Keep raw for play()
-            
+
             return self._success(result)
-            
+
         except Exception as e:
             return self._error(f"Synthesis failed: {str(e)}")
-    
+
     def _play(
         self,
         text: str = "",
@@ -275,7 +274,7 @@ class TTSSkill(Skill):
     ) -> Dict[str, Any]:
         """
         Synthesize and play audio to a specific device (e.g., Wave Link channel).
-        
+
         Args:
             text: The text to speak
             device: Output device name (default: "Rhea Noir")
@@ -283,33 +282,32 @@ class TTSSkill(Skill):
         """
         if not self._sounddevice:
             return self._error("sounddevice not installed. Run: pip install sounddevice")
-        
+
         # First synthesize the audio
         synth_result = self._synthesize(text=text, voice=voice, **kwargs)
-        
+
         if not synth_result.get("success"):
             return synth_result
-        
+
         try:
             # Get the raw audio data
             audio_raw = synth_result["result"].get("audio_raw")
             if not audio_raw:
                 # Decode from base64 if needed
-                import base64
                 audio_raw = base64.b64decode(synth_result["result"]["audio_base64"])
-            
+
             # Convert to numpy array (16-bit PCM)
             audio_array = np.frombuffer(audio_raw, dtype=np.int16).astype(np.float32) / 32768.0
-            
+
             # Find the device
             device_id = self._find_device(device)
             if device_id is None:
                 return self._error(f"Device '{device}' not found. Use 'devices' action to list available devices.")
-            
+
             # Play the audio
             self._sounddevice.play(audio_array, samplerate=24000, device=device_id)
             self._sounddevice.wait()  # Wait for playback to finish
-            
+
             return self._success({
                 "played": True,
                 "device": device,
@@ -317,15 +315,15 @@ class TTSSkill(Skill):
                 "duration_seconds": len(audio_array) / 24000,
                 "text_length": len(text),
             })
-            
+
         except Exception as e:
             return self._error(f"Playback failed: {str(e)}")
-    
+
     def _list_devices(self) -> Dict[str, Any]:
         """List available audio output devices."""
         if not self._sounddevice:
             return self._error("sounddevice not installed")
-        
+
         devices = []
         for i, d in enumerate(self._sounddevice.query_devices()):
             if d["max_output_channels"] > 0:
@@ -335,12 +333,12 @@ class TTSSkill(Skill):
                     "channels": d["max_output_channels"],
                     "is_rhea": RHEA_AUDIO_DEVICE.lower() in d["name"].lower(),
                 })
-        
+
         return self._success({
             "devices": devices,
             "default_device": RHEA_AUDIO_DEVICE,
         })
-    
+
     def _list_voices(self) -> Dict[str, Any]:
         """List available Gemini TTS voices with characteristics."""
         voices = [
@@ -365,33 +363,32 @@ class TTSSkill(Skill):
         """Start persistent playback stream."""
         if self._stream_worker:
             self._stream_worker.stop()
-            
+
         device_id = self._find_device(device)
         print(f"[DEBUG] AudioStreamWorker starting on device: '{device}' (ID: {device_id})")
-        
+
         self._stream_worker = AudioStreamWorker(device_id=device_id, samplerate=samplerate)
         return self._success({"started": True, "device": device, "device_id": device_id})
-        
+
     def _stream_feed(self, text: str, voice: str = RHEA_VOICE, **kwargs):
         """Synthesize text and feed to stream."""
         if not self._stream_worker:
             return self._error("Stream not started. Call 'stream_start' first.")
-            
+
         # Synthesize (reuse existing logic)
         synth_result = self._synthesize(text=text, voice=voice, **kwargs)
         if not synth_result.get("success"):
             return synth_result
-            
+
         # Get raw bytes
         audio_raw = synth_result["result"].get("audio_raw")
         if not audio_raw:
-             import base64
              audio_raw = base64.b64decode(synth_result["result"]["audio_base64"])
-             
+
         # Normalize: int16 bytes directly to worker
         if audio_raw.startswith(b'RIFF'):
             audio_raw = audio_raw[44:]
-            
+
         # Debug data stats
         try:
             arr = np.frombuffer(audio_raw, dtype=np.int16)
@@ -401,10 +398,10 @@ class TTSSkill(Skill):
                 print("[DEBUG] Feeding EMPTY audio chunk!")
         except Exception:
             pass
-            
+
         self._stream_worker.add(audio_raw)
         return self._success({"fed": True, "bytes": len(audio_raw)})
-        
+
     def _stream_stop(self, **kwargs):
         if self._stream_worker:
             self._stream_worker.stop()

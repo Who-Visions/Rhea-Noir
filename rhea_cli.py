@@ -28,6 +28,7 @@ Examples:
     
     parser.add_argument("request", nargs="?", help="What you want Rhea to do")
     parser.add_argument("--skills", "-s", action="store_true", help="List all skills")
+    parser.add_argument("--flutter", "-F", action="store_true", help="Flutter development mode")
     parser.add_argument("--route", "-r", action="store_true", help="Just route, don't execute")
     parser.add_argument("--file", "-f", help="File to process")
     parser.add_argument("--url", "-u", help="URL to process")
@@ -47,11 +48,18 @@ Examples:
             triggers = ", ".join(cap['triggers'][:3])
             console.print(f"    [dim]Triggers: {triggers}...[/dim]")
         return
-    
+
+    # Flutter development mode
+    if args.flutter:
+        from rhea_noir.flutter_menu import show_flutter_menu
+        show_flutter_menu(console)
+        return
+
     # Need a request
     if not args.request:
         console.print("[yellow]Tell Rhea what you want![/yellow]")
         console.print("Example: [cyan]rhea 'search for latest AI news'[/cyan]")
+        console.print("         [cyan]rhea --flutter[/cyan] for Flutter development")
         return
     
     # Build context

@@ -21,6 +21,116 @@ class NotionService:
             raise ValueError("NOTION_TOKEN not found in environment")
         self.client = AsyncClient(auth=self.token)
 
+    async def fetch_full_database_index(self) -> dict:
+        """
+        Fetches the Title and ID of EVERY page in the database.
+        Handles pagination to ensure 1000+ entries are scanned.
+        Returns: dict { "Title Lowercase": "NotionID" }
+        """
+        import httpx
+        url = f"https://api.notion.com/v1/databases/{self.DATABASE_ID}/query"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        has_more = True
+        next_cursor = None
+        full_index = {}
+        page_count = 0
+        
+        print("🧠 Rhea: Starting Full Database Index Scan...")
+        
+        while has_more:
+            payload = {"page_size": 100}
+            if next_cursor:
+                payload["start_cursor"] = next_cursor
+                
+            async with httpx.AsyncClient() as http:
+                # Retry logic for large scans
+                for attempt in range(3):
+                    try:
+                        response = await http.post(url, json=payload, headers=headers, timeout=30.0)
+                        if response.status_code == 200:
+                            break
+                        await asyncio.sleep(1 * (attempt+1))
+                    except Exception:
+                        await asyncio.sleep(1)
+
+            if response.status_code != 200:
+                print(f"❌ Error Scanning Page {page_count//100}: {response.status_code}")
+                break
+                
+            data = response.json()
+            results = data.get("results", [])
+            
+            for page in results:
+                try:
+                    props = page.get("properties", {})
+                    # Handle different Title property names if schema changes, but usually 'Name'
+                    title_prop = props.get("Name", {})
+                    if title_prop and "title" in title_prop and title_prop["title"]:
+                        title = title_prop["title"][0]["plain_text"]
+                        full_index[title.lower().strip()] = page["id"]
+                except Exception:
+                    continue # Skip malformed pages
+            
+            page_count += len(results)
+            print(f"   ...scanned {page_count} pages...")
+            
+            has_more = data.get("has_more", False)
+            next_cursor = data.get("next_cursor")
+            
+        print(f"✅ Index Complete. Total Nodes: {len(full_index)}")
+        return full_index
+
+    async def search_by_title(self, query: str) -> List[VeilEntity]:
+        """
+        Uses Notion Search API to find pages by title matching query.
+        """
+        import httpx
+        url = "https://api.notion.com/v1/search"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "query": query,
+            "filter": {
+                "value": "page",
+                "property": "object"
+            },
+            "page_size": 20
+        }
+        
+        try:
+            async with httpx.AsyncClient() as http:
+                response = await http.post(url, json=payload, headers=headers)
+                
+            if response.status_code != 200:
+                print(f"❌ Search Error {response.status_code}: {response.text}")
+                return []
+                
+            data = response.json()
+            results = []
+            for page in data.get("results", []):
+                # Filter by database to ensure it's VeilVerse
+                if page.get("parent", {}).get("database_id") == self.DATABASE_ID.replace("-",""): 
+                    # Note: Notion API sometimes returns dashless IDs or with dashes, handle carefully.
+                    # Actually standardizing checking:
+                    pid = page.get("parent", {}).get("database_id")
+                    if pid and pid.replace("-","") == self.DATABASE_ID.replace("-",""):
+                         entity = self._map_page_to_model(page)
+                         if entity: results.append(entity)
+            
+            return results
+        except Exception as e:
+            print(f"❌ Search Failed: {e}")
+            return []
+
     async def query_veilverse(self, 
                               category: Optional[VeilVerseCategory] = None, 
                               era: Optional[UniverseEra] = None,
@@ -42,7 +152,15 @@ class NotionService:
                 "select": {"equals": era.value}
             })
             
-        payload = {"page_size": limit}
+        payload = {
+            "page_size": limit,
+            "sorts": [
+                {
+                    "timestamp": "last_edited_time",
+                    "direction": "descending"
+                }
+            ]
+        }
         if filter_conditions:
             if len(filter_conditions) == 1:
                 payload["filter"] = filter_conditions[0]
@@ -134,8 +252,9 @@ class NotionService:
             # Notion blocks limit is 2000 chars per text block, need chunking if content is huge
             # For simplicity, we create one toggle block with the content chunked inside 
             
-            # Simple chunking to avoid 2000 char limit error
-            chunks = [content[i:i+2000] for i in range(0, len(content), 2000)]
+            # Simple chunking to avoid 2000 char limit error (Notion API limit)
+            # We use 1800 to be safe with unicode/special chars
+            chunks = [content[i:i+1800] for i in range(0, len(content), 1800)]
             
             check_text_blocks = []
             for chunk in chunks:
@@ -176,12 +295,189 @@ class NotionService:
             data = response.json()
             print(f"✅ Created Page ID: {data['id']}")
             return True
-            
         except Exception as e:
             print(f"❌ Page Creation Failed: {e}")
             import traceback
             traceback.print_exc()
             return False
+    async def update_page(self, page_id: str, properties: Dict[str, Any], content: Optional[str] = None) -> bool:
+        """
+        Updates an existing page's properties and appends content if provided.
+        """
+        import httpx
+        print(f"🧠 Rhea: Updating Notion Page ID {page_id}...")
+        
+        url = f"https://api.notion.com/v1/pages/{page_id}"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+
+        payload = {"properties": properties}
+        
+        try:
+            async with httpx.AsyncClient() as http:
+                response = await http.patch(url, json=payload, headers=headers)
+            
+            if response.status_code != 200:
+                print(f"❌ HTTP Error {response.status_code}: {response.text}")
+                return False
+
+            # If there's content to append, we use the blocks endpoint
+            if content:
+                await self.append_content(page_id, content)
+            
+            return True
+        except Exception as e:
+            print(f"❌ Page Update Failed: {e}")
+            return False
+
+    async def append_content(self, page_id: str, content: str) -> bool:
+        """Appends new blocks to a page."""
+        import httpx
+        url = f"https://api.notion.com/v1/blocks/{page_id}/children"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        chunks = [content[i:i+1800] for i in range(0, len(content), 1800)]
+        children = []
+        for chunk in chunks:
+            children.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                }
+            })
+            
+        payload = {"children": children}
+        async with httpx.AsyncClient() as http:
+            response = await http.patch(url, json=payload, headers=headers)
+        return response.status_code == 200
+
+    async def delete_page(self, page_id: str) -> bool:
+        """Archives a page (Notion's version of delete)."""
+        import httpx
+        url = f"https://api.notion.com/v1/pages/{page_id}"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        payload = {"archived": True}
+        async with httpx.AsyncClient() as http:
+            response = await http.patch(url, json=payload, headers=headers)
+        return response.status_code == 200
+
+    async def retrieve_blocks(self, block_id: str) -> List[Dict[str, Any]]:
+        """Retrieves children blocks of a page or block."""
+        import httpx
+        url = f"https://api.notion.com/v1/blocks/{block_id}/children"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28"
+        }
+        
+        results = []
+        has_more = True
+        next_cursor = None
+        
+        try:
+            async with httpx.AsyncClient() as http:
+                while has_more:
+                    params = {"page_size": 100}
+                    if next_cursor:
+                        params["start_cursor"] = next_cursor
+                    
+                    response = await http.get(url, headers=headers, params=params)
+                    if response.status_code != 200:
+                        print(f"❌ Block Retrieval Error: {response.status_code}")
+                        break
+                    
+                    data = response.json()
+                    results.extend(data.get("results", []))
+                    has_more = data.get("has_more", False)
+                    next_cursor = data.get("next_cursor")
+            return results
+        except Exception as e:
+            print(f"❌ Error Retrieving Blocks: {e}")
+            return []
+
+    async def add_comment(self, page_id: str, text: str, discussion_id: Optional[str] = None) -> bool:
+        """Adds a comment to a page or block."""
+        import httpx
+        url = "https://api.notion.com/v1/comments"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "rich_text": [
+                {
+                    "type": "text",
+                    "text": {"content": text}
+                }
+            ]
+        }
+        
+        if discussion_id:
+            payload["discussion_id"] = discussion_id
+        else:
+            payload["parent"] = {"page_id": page_id}
+            
+        try:
+            async with httpx.AsyncClient() as http:
+                response = await http.post(url, json=payload, headers=headers)
+            
+            if response.status_code == 200:
+                print(f"✅ Comment Added to {page_id}")
+                return True
+            else:
+                print(f"❌ Comment Failed ({response.status_code}): {response.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Error Adding Comment: {e}")
+            return False
+
+    async def retrieve_comments(self, block_id: str) -> List[Dict[str, Any]]:
+        """Retrieves comments for a page or block."""
+        import httpx
+        url = f"https://api.notion.com/v1/comments?block_id={block_id}"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": "2022-06-28"
+        }
+        
+        results = []
+        has_more = True
+        next_cursor = None
+        
+        try:
+            async with httpx.AsyncClient() as http:
+                while has_more:
+                    params = {"page_size": 100}
+                    if next_cursor:
+                        params["start_cursor"] = next_cursor
+                    
+                    response = await http.get(url, headers=headers, params=params)
+                    if response.status_code != 200:
+                        print(f"❌ Comment Retrieval Error: {response.status_code}")
+                        break
+                    
+                    data = response.json()
+                    results.extend(data.get("results", []))
+                    has_more = data.get("has_more", False)
+                    next_cursor = data.get("next_cursor")
+            return results
+        except Exception as e:
+            print(f"❌ Error Retrieving Comments: {e}")
+            return []
 
     # Removed _execute_query helper as we are using httpx directly now
 

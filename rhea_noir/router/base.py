@@ -52,7 +52,7 @@ class BaseRouter(ABC):
         """Determine if skill is pro or flash tier."""
         # pylint: disable=import-outside-toplevel
         from rhea_noir.router.config import MODEL_TIERS
-        
+
         if skill and skill in MODEL_TIERS["pro"]["skills"]:
             return "pro"
         return "flash"

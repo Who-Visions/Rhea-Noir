@@ -30,14 +30,14 @@ class Reflex:
     def route(self, request: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Route a natural language request to the appropriate skill.
-        
+
         Algorithm:
         1. Try FastStrategy (Keyword + Flash)
         2. If confidence < 0.7, try AgenticStrategy (Pro)
         """
         # 1. Fast Route
         result = self._fast_router.route(request, context)
-        
+
         # 2. Check confidence (fallback to Pro if needed)
         confidence = result.get("confidence", 0.0)
         # Only fallback if it wasn't a keyword match (which is usually high confidence)
@@ -47,7 +47,7 @@ class Reflex:
             pro_result = self._agentic_router.route(request, context)
             if pro_result.get("confidence", 0.0) > confidence:
                 return pro_result
-        
+
         return result
 
     def execute(self, request: str, context: Optional[Dict] = None) -> Dict[str, Any]:

@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 
 class ShortTermMemory:
     """SQLite-based local memory for fast, instant access"""
-    
+
     def __init__(self, db_path: Optional[str] = None):
         """Initialize SQLite database for short-term memory"""
         if db_path is None:
@@ -20,10 +20,10 @@ class ShortTermMemory:
             db_dir = Path.home() / ".rhea_noir"
             db_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(db_dir / "memory.db")
-        
+
         self.db_path = db_path
         self._init_db()
-    
+
     def _init_db(self):
         """Create tables if they don't exist"""
         with sqlite3.connect(self.db_path) as conn:
@@ -64,7 +64,7 @@ class ShortTermMemory:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_synced ON memories(synced)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_identity_category ON identity(category)")
             conn.commit()
-    
+
     def store(
         self,
         role: str,
@@ -76,7 +76,7 @@ class ShortTermMemory:
         """Store a memory entry, returns the memory ID"""
         memory_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
-        
+
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -94,18 +94,18 @@ class ShortTermMemory:
                 )
             )
             conn.commit()
-        
+
         return memory_id
-    
+
     def recall(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search memories by content (simple text search)"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT * FROM memories 
-                WHERE content LIKE ? 
-                ORDER BY timestamp DESC 
+                SELECT * FROM memories
+                WHERE content LIKE ?
+                ORDER BY timestamp DESC
                 LIMIT ?
                 """,
                 (f"%{query}%", limit)
@@ -122,15 +122,15 @@ class ShortTermMemory:
                     "session_id": row["session_id"]
                 })
             return results
-    
+
     def get_context(self, n_messages: int = 20) -> List[Dict[str, Any]]:
         """Get the last N messages for context"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT * FROM memories 
-                ORDER BY timestamp DESC 
+                SELECT * FROM memories
+                ORDER BY timestamp DESC
                 LIMIT ?
                 """,
                 (n_messages,)
@@ -146,7 +146,7 @@ class ShortTermMemory:
                 })
             # Return in chronological order
             return list(reversed(results))
-    
+
     def get_unsynced(self) -> List[Dict[str, Any]]:
         """Get memories that haven't been synced to cloud"""
         with sqlite3.connect(self.db_path) as conn:
@@ -155,7 +155,7 @@ class ShortTermMemory:
                 "SELECT * FROM memories WHERE synced = 0 ORDER BY timestamp"
             )
             return [dict(row) for row in cursor.fetchall()]
-    
+
     def mark_synced(self, memory_ids: List[str]):
         """Mark memories as synced to cloud"""
         with sqlite3.connect(self.db_path) as conn:
@@ -165,7 +165,7 @@ class ShortTermMemory:
                 memory_ids
             )
             conn.commit()
-    
+
     def get_stats(self) -> Dict[str, int]:
         """Get memory statistics"""
         with sqlite3.connect(self.db_path) as conn:
@@ -180,14 +180,14 @@ class ShortTermMemory:
                 "keywords": keywords,
                 "identity_items": identity
             }
-    
+
     def clear(self):
         """Clear all local memories (for testing)"""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM memories")
             conn.execute("DELETE FROM keywords")
             conn.commit()
-    
+
     def store_identity(self, key: str, value: Any, category: str = "general") -> None:
         """Store an identity/expression value"""
         timestamp = datetime.now().isoformat()
@@ -200,7 +200,7 @@ class ShortTermMemory:
                 (key, json.dumps(value), category, timestamp)
             )
             conn.commit()
-    
+
     def get_identity(self, key: str) -> Optional[Any]:
         """Retrieve an identity/expression value"""
         with sqlite3.connect(self.db_path) as conn:
@@ -212,7 +212,7 @@ class ShortTermMemory:
             if row:
                 return json.loads(row[0])
             return None
-    
+
     def get_identity_by_category(self, category: str) -> Dict[str, Any]:
         """Get all identity values in a category"""
         with sqlite3.connect(self.db_path) as conn:
@@ -221,7 +221,7 @@ class ShortTermMemory:
                 (category,)
             )
             return {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
-    
+
     def seed_expressions(self, expressions_data: Dict[str, Any]) -> int:
         """
         Seed the identity table with expressions/emoji data.
@@ -229,7 +229,7 @@ class ShortTermMemory:
         """
         count = 0
         timestamp = datetime.now().isoformat()
-        
+
         with sqlite3.connect(self.db_path) as conn:
             # Store identity info
             if "identity" in expressions_data:
@@ -242,7 +242,7 @@ class ShortTermMemory:
                         (f"identity_{key}", json.dumps(value), "identity", timestamp)
                     )
                     count += 1
-            
+
             # Store expression categories
             if "expressions" in expressions_data:
                 for category, data in expressions_data["expressions"].items():
@@ -254,11 +254,11 @@ class ShortTermMemory:
                         (f"expr_{category}", json.dumps(data), "expressions", timestamp)
                     )
                     count += 1
-            
+
             conn.commit()
-        
+
         return count
-    
+
     def is_expressions_seeded(self) -> bool:
         """Check if expressions have been seeded"""
         with sqlite3.connect(self.db_path) as conn:

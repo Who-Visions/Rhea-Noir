@@ -2,20 +2,34 @@
 Rhea Noir Interactive Menu - Keyboard-navigable help and menus
 """
 
-from typing import List, Callable, Optional, Dict, Any
-from prompt_toolkit import PromptSession
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.styles import Style
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich import box
+from typing import List, Optional, Dict, Any
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.styles import Style
+except ImportError:
+    PromptSession = None
+    KeyBindings = None
+    HTML = None
+    Style = None
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich import box
+except ImportError:
+    Console = None
+    Panel = None
+    Table = None
+    box = None
 
 
 class InteractiveMenu:
     """Interactive menu with keyboard navigation"""
-    
+
     def __init__(self, console: Console):
         self.console = console
         self.style = Style.from_dict({
@@ -23,7 +37,7 @@ class InteractiveMenu:
             'option': '#FFFFFF',
             'hint': '#888888 italic',
         })
-    
+
     def select(
         self,
         title: str,
@@ -32,51 +46,51 @@ class InteractiveMenu:
     ) -> Optional[Dict[str, Any]]:
         """
         Display interactive selection menu.
-        
+
         Args:
             title: Menu title
             options: List of dicts with 'label', 'value', 'description'
             allow_cancel: Allow ESC to cancel
-            
+
         Returns:
             Selected option dict or None if cancelled
         """
         selected_index = 0
-        
+
         kb = KeyBindings()
-        
+
         @kb.add('up')
         @kb.add('k')
         def move_up(event):
             nonlocal selected_index
             selected_index = (selected_index - 1) % len(options)
-        
+
         @kb.add('down')
         @kb.add('j')
         def move_down(event):
             nonlocal selected_index
             selected_index = (selected_index + 1) % len(options)
-        
+
         result = [None]  # Use list to allow mutation in closure
-        
+
         @kb.add('enter')
         def select_option(event):
             result[0] = options[selected_index]
             event.app.exit()
-        
+
         @kb.add('escape')
         @kb.add('q')
         def cancel(event):
             if allow_cancel:
                 event.app.exit()
-        
+
         # Create session with key bindings
         session = PromptSession(key_bindings=kb)
-        
+
         def get_prompt():
             lines = [f"\n[bold bright_magenta]{title}[/bold bright_magenta]\n"]
             lines.append("[dim]Use ↑/↓ or j/k to navigate, Enter to select, ESC to cancel[/dim]\n")
-            
+
             for i, opt in enumerate(options):
                 if i == selected_index:
                     lines.append(f"  [bold bright_magenta]❯[/bold bright_magenta] [bold]{opt['label']}[/bold]")
@@ -84,12 +98,12 @@ class InteractiveMenu:
                         lines.append(f"    [dim]{opt['description']}[/dim]")
                 else:
                     lines.append(f"    {opt['label']}")
-            
+
             return '\n'.join(lines)
-        
+
         # Display and wait for input
         self.console.print(get_prompt())
-        
+
         try:
             session.prompt(
                 HTML('<ansibrightmagenta>❯</ansibrightmagenta> '),
@@ -97,13 +111,13 @@ class InteractiveMenu:
             )
         except (EOFError, KeyboardInterrupt):
             pass
-        
+
         return result[0]
 
 
 def show_interactive_help(console: Console) -> None:
     """Display interactive help menu"""
-    
+
     categories = [
         {
             "label": "💬 Chat Commands",
@@ -164,7 +178,7 @@ def show_interactive_help(console: Console) -> None:
             ]
         },
     ]
-    
+
     # Show category selection
     console.print()
     console.print(Panel(
@@ -173,7 +187,7 @@ def show_interactive_help(console: Console) -> None:
         border_style="bright_magenta",
         box=box.ROUNDED,
     ))
-    
+
     # Display all categories as expandable sections
     for cat in categories:
         table = Table(
@@ -186,13 +200,13 @@ def show_interactive_help(console: Console) -> None:
         )
         table.add_column("Command", style="bright_red", width=25)
         table.add_column("Description", style="white")
-        
+
         for cmd, desc in cat["commands"]:
             table.add_row(cmd, desc)
-        
+
         console.print(table)
         console.print()
-    
+
     # Navigation hint
     console.print(
         "[dim]Tip: Use ↑/↓ arrows to navigate command history[/dim]"

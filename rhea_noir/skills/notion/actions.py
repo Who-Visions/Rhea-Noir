@@ -11,19 +11,19 @@ class NotionSkill(Skill):
     """
     Interact with Notion API (pages, databases, blocks).
     """
-    
+
     name = "notion"
     description = "Interact with Notion pages and databases"
     version = "1.0.0"
-    
+
     def __init__(self):
         super().__init__()
         self._client = None
-    
+
     @property
     def actions(self) -> List[str]:
         return ["me", "search", "list_users", "add_media"]
-    
+
     def _lazy_load(self):
         if self._client is None:
             try:
@@ -33,22 +33,22 @@ class NotionSkill(Skill):
                     self._client = Client(auth=token)
             except ImportError:
                 pass
-    
+
     def execute(self, action: str, **kwargs) -> Dict[str, Any]:
         self._lazy_load()
-        
+
         if not self._client:
             return self._error("Notion client not available (check NOTION_TOKEN)")
-        
+
         try:
             if action == "me":
                 user = self._client.users.me()
                 return self._success(user)
-            
+
             elif action == "list_users":
                 users = self._client.users.list()
                 return self._success(users)
-            
+
             elif action == "search":
                 # Search for pages/databases the integration has access to
                 query = kwargs.get("query", "")
@@ -64,14 +64,14 @@ class NotionSkill(Skill):
 
                 data = kwargs.get("data", {})
                 title = data.get("title", "Untitled")
-                
+
                 # Map properties to specific schema
                 properties = {
                     "Title": {"title": [{"text": {"content": title}}]},
                     "Status": {"select": {"name": "Want to Watch"}}, # Default status
                     "Priority": {"select": {"name": "Medium"}}, # Default
                 }
-                
+
                 # Check if we have pre-formatted Notion data (e.g. from TVmaze)
                 notion_data = data.get("notion_data")
                 if notion_data:
@@ -86,7 +86,7 @@ class NotionSkill(Skill):
                         properties["Release Date"] = {"date": {"start": notion_data.get("Release Date")}}
                     if notion_data.get("Studio"):
                         properties["Studio"] = {"rich_text": [{"text": {"content": notion_data.get("Studio") or ""}}]}
-                    
+
                     # Multi-selects
                     if notion_data.get("Genre"):
                         genres = [{"name": g} for g in notion_data.get("Genre")]
@@ -126,7 +126,7 @@ class NotionSkill(Skill):
                 link = data.get("link")
                 if link and link.startswith("http"):
                     properties["Where to Watch URL"] = {"url": link}
-                
+
                 # Official Site override if available
                 if data.get("official_site"):
                     properties["Where to Watch URL"] = {"url": data.get("official_site")}
@@ -144,10 +144,10 @@ class NotionSkill(Skill):
                     icon={"emoji": "🎬"}
                 )
                 return self._success(new_page)
-            
+
             else:
                 return self._action_not_found(action)
-                
+
         except Exception as e:
             return self._error(f"Notion API error: {str(e)}")
 

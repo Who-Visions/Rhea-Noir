@@ -20,7 +20,7 @@ class ModelTier(Enum):
 
 class ModelRouter:
     """Intelligent routing to appropriate Gemini model tier"""
-    
+
     # Model configurations
     MODELS = {
         ModelTier.LITE: {
@@ -30,7 +30,7 @@ class ModelRouter:
         },
         ModelTier.STANDARD: {
             "name": "gemini-2.5-flash",
-            "location": "us-central1", 
+            "location": "us-central1",
             "description": "Balanced - default conversations",
         },
         ModelTier.PRO: {
@@ -54,7 +54,7 @@ class ModelRouter:
             "description": "Fallback multimodal - image understanding",
         },
     }
-    
+
     # Patterns that suggest higher complexity
     COMPLEXITY_PATTERNS = {
         ModelTier.ELITE: [
@@ -80,22 +80,22 @@ class ModelRouter:
             r'^.{1,50}$',  # Very short inputs
         ],
     }
-    
+
     # Keywords that suggest image involvement
     IMAGE_KEYWORDS = [
         'image', 'picture', 'photo', 'screenshot', 'diagram',
         'visual', 'see', 'look at', 'show me', 'render',
     ]
-    
+
     def __init__(self, default_tier: ModelTier = ModelTier.STANDARD):
         """Initialize router with default tier"""
         self.default_tier = default_tier
         self.override_tier: Optional[ModelTier] = None
-    
+
     def route(self, query: str, has_image: bool = False) -> Tuple[str, str, ModelTier]:
         """
         Route query to appropriate model.
-        
+
         Returns:
             Tuple of (model_name, location, tier)
         """
@@ -108,36 +108,36 @@ class ModelRouter:
             tier = ModelTier.ELITE_IMAGE  # gemini-3-pro-image-preview (global)
         else:
             tier = self._analyze_complexity(query)
-        
+
         config = self.MODELS[tier]
         return config["name"], config["location"], tier
-    
+
     def _has_image_keywords(self, query: str) -> bool:
         """Check if query mentions images"""
         query_lower = query.lower()
         return any(kw in query_lower for kw in self.IMAGE_KEYWORDS)
-    
+
     def _analyze_complexity(self, query: str) -> ModelTier:
         """Analyze query to determine complexity tier"""
         query_lower = query.lower()
-        
+
         # Check patterns from most complex to least
         for tier in [ModelTier.ELITE, ModelTier.PRO, ModelTier.STANDARD, ModelTier.LITE]:
             patterns = self.COMPLEXITY_PATTERNS.get(tier, [])
             for pattern in patterns:
                 if re.search(pattern, query_lower):
                     return tier
-        
+
         return self.default_tier
-    
+
     def set_override(self, tier: ModelTier):
         """Manually override next routing decision"""
         self.override_tier = tier
-    
+
     def get_model_info(self, tier: ModelTier) -> dict:
         """Get full info for a model tier"""
         return self.MODELS[tier]
-    
+
     @classmethod
     def list_models(cls) -> list:
         """List all available models"""

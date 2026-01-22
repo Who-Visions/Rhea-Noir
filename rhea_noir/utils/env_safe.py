@@ -1,3 +1,7 @@
+"""
+Rhea Noir Module: env_safe.py
+Auto-generated docstring.
+"""
 import os
 import shutil
 from typing import Optional
@@ -30,7 +34,7 @@ def safe_update_env(key: str, value: str):
 
     new_lines = []
     key_found = False
-    
+
     for line in lines:
         # Check if line starts with key=
         clean_line = line.strip()

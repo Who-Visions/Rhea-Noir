@@ -10,14 +10,14 @@ from typing import Optional, Dict, Any, List
 
 class FileSearchSkill:
     """Skill for Gemini File Search (RAG) operations."""
-    
+
     name = "filesearch"
     version = "1.0.0"
     description = "Gemini File Search - semantic search over your documents"
-    
+
     def __init__(self):
         self._client = None
-    
+
     def _get_client(self):
         """Get Gemini client."""
         if self._client is None:
@@ -27,15 +27,15 @@ class FileSearchSkill:
             except ImportError:
                 raise ImportError("google-genai not installed. Run: pip install google-genai")
         return self._client
-    
+
     def _success(self, data: Any) -> Dict:
         """Return success response."""
         return {"success": True, "data": data}
-    
+
     def _error(self, message: str) -> Dict:
         """Return error response."""
         return {"success": False, "error": message}
-    
+
     def _wait_for_operation(self, operation, timeout: int = 300):
         """Wait for an async operation to complete."""
         client = self._get_client()
@@ -46,14 +46,14 @@ class FileSearchSkill:
             time.sleep(5)
             operation = client.operations.get(operation)
         return operation
-    
+
     def create_store(self, display_name: str) -> Dict:
         """
         Create a new file search store.
-        
+
         Args:
             display_name: Human-readable name for the store
-            
+
         Returns:
             Dict with store name and details
         """
@@ -69,7 +69,7 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def upload_file(
         self,
         store_name: str,
@@ -81,7 +81,7 @@ class FileSearchSkill:
     ) -> Dict:
         """
         Upload and index a file to the store.
-        
+
         Args:
             store_name: Name of the file search store
             file_path: Path to the file to upload
@@ -89,17 +89,17 @@ class FileSearchSkill:
             metadata: Optional key-value metadata for filtering
             max_tokens_per_chunk: Maximum tokens per chunk
             max_overlap_tokens: Token overlap between chunks
-            
+
         Returns:
             Dict with upload status
         """
         try:
             client = self._get_client()
             path = Path(file_path)
-            
+
             if not path.exists():
                 return self._error(f"File not found: {file_path}")
-            
+
             config = {
                 'display_name': display_name or path.name,
                 'chunking_config': {
@@ -109,7 +109,7 @@ class FileSearchSkill:
                     }
                 }
             }
-            
+
             # Add custom metadata if provided
             if metadata:
                 custom_metadata = []
@@ -119,16 +119,16 @@ class FileSearchSkill:
                     else:
                         custom_metadata.append({"key": key, "string_value": str(value)})
                 config['custom_metadata'] = custom_metadata
-            
+
             operation = client.file_search_stores.upload_to_file_search_store(
                 file=str(path),
                 file_search_store_name=store_name,
                 config=config
             )
-            
+
             # Wait for indexing to complete
             self._wait_for_operation(operation)
-            
+
             return self._success({
                 "file": path.name,
                 "store": store_name,
@@ -136,7 +136,7 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def import_file(
         self,
         store_name: str,
@@ -146,35 +146,35 @@ class FileSearchSkill:
     ) -> Dict:
         """
         Upload file via Files API then import to store.
-        
+
         Args:
             store_name: Name of the file search store
             file_path: Path to the file
             display_name: Optional display name
             metadata: Optional metadata for filtering
-            
+
         Returns:
             Dict with import status
         """
         try:
             client = self._get_client()
             path = Path(file_path)
-            
+
             if not path.exists():
                 return self._error(f"File not found: {file_path}")
-            
+
             # Upload to Files API first
             uploaded_file = client.files.upload(
                 file=str(path),
                 config={'name': display_name or path.name}
             )
-            
+
             # Build import config
             import_kwargs = {
                 'file_search_store_name': store_name,
                 'file_name': uploaded_file.name
             }
-            
+
             if metadata:
                 custom_metadata = []
                 for key, value in metadata.items():
@@ -183,10 +183,10 @@ class FileSearchSkill:
                     else:
                         custom_metadata.append({"key": key, "string_value": str(value)})
                 import_kwargs['custom_metadata'] = custom_metadata
-            
+
             operation = client.file_search_stores.import_file(**import_kwargs)
             self._wait_for_operation(operation)
-            
+
             return self._success({
                 "file": path.name,
                 "store": store_name,
@@ -194,7 +194,7 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def query(
         self,
         store_name: str,
@@ -204,26 +204,26 @@ class FileSearchSkill:
     ) -> Dict:
         """
         Query the file search store with semantic search.
-        
+
         Args:
             store_name: Name of the file search store
             question: Question or query text
             model: Gemini model to use
             metadata_filter: Optional filter (e.g., 'author="John"')
-            
+
         Returns:
             Dict with answer and citations
         """
         try:
             from google.genai import types
             client = self._get_client()
-            
+
             file_search_config = {
                 'file_search_store_names': [store_name]
             }
             if metadata_filter:
                 file_search_config['metadata_filter'] = metadata_filter
-            
+
             response = client.models.generate_content(
                 model=model,
                 contents=question,
@@ -235,12 +235,12 @@ class FileSearchSkill:
                     ]
                 )
             )
-            
+
             # Extract citations if available
             citations = None
             if response.candidates and response.candidates[0].grounding_metadata:
                 citations = response.candidates[0].grounding_metadata
-            
+
             return self._success({
                 "answer": response.text,
                 "citations": citations,
@@ -249,7 +249,7 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def query_structured(
         self,
         store_name: str,
@@ -260,27 +260,26 @@ class FileSearchSkill:
     ) -> Dict:
         """
         Query with structured output (Pydantic model).
-        
+
         Args:
             store_name: Name of the file search store
             question: Question or query text
             response_schema: Pydantic model class for response
             model: Gemini model to use
             metadata_filter: Optional filter
-            
+
         Returns:
             Dict with parsed structured response
         """
         try:
-            from google.genai import types
             client = self._get_client()
-            
+
             file_search_config = {
                 'file_search_store_names': [store_name]
             }
             if metadata_filter:
                 file_search_config['metadata_filter'] = metadata_filter
-            
+
             response = client.models.generate_content(
                 model=model,
                 contents=question,
@@ -294,10 +293,10 @@ class FileSearchSkill:
                     response_json_schema=response_schema.model_json_schema()
                 )
             )
-            
+
             # Parse response
             result = response_schema.model_validate_json(response.text)
-            
+
             return self._success({
                 "result": result.model_dump(),
                 "raw_text": response.text,
@@ -305,11 +304,11 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def list_stores(self) -> Dict:
         """
         List all file search stores.
-        
+
         Returns:
             Dict with list of stores
         """
@@ -327,14 +326,14 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def list_documents(self, store_name: str) -> Dict:
         """
         List documents in a file search store.
-        
+
         Args:
             store_name: Name of the store
-            
+
         Returns:
             Dict with list of documents
         """
@@ -353,15 +352,15 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def delete_store(self, store_name: str, force: bool = False) -> Dict:
         """
         Delete a file search store.
-        
+
         Args:
             store_name: Name of the store to delete
             force: Force delete even if store has documents
-            
+
         Returns:
             Dict with deletion status
         """
@@ -376,14 +375,14 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def delete_document(self, document_name: str) -> Dict:
         """
         Delete a document from a store.
-        
+
         Args:
             document_name: Full document name (includes store path)
-            
+
         Returns:
             Dict with deletion status
         """
@@ -395,14 +394,14 @@ class FileSearchSkill:
             })
         except Exception as e:
             return self._error(str(e))
-    
+
     def get_store(self, store_name: str) -> Dict:
         """
         Get details of a specific store.
-        
+
         Args:
             store_name: Name of the store
-            
+
         Returns:
             Dict with store details
         """

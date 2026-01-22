@@ -16,6 +16,8 @@ import base64
 from datetime import datetime
 import logging
 import httpx # Async HTTP Client for Kaedra Bridge
+from services.memory import LoreMemoryService
+from services.sync_engine import LoreSyncEngine
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -99,8 +101,21 @@ def route_request(
     return selected_model, generation_config
 
 
-# Global Client
+# Global Clients
 client: Optional[genai.Client] = None
+lore_memory = LoreMemoryService()
+sync_engine = LoreSyncEngine()
+
+async def periodic_sync():
+    """Background task to sync Notion LoreDB to SQLite every 15 minutes."""
+    while True:
+        try:
+            print("🔄 Periodic Lore Sync Starting...")
+            await sync_engine.run_sync()
+            print("✅ Periodic Lore Sync Finished.")
+        except Exception as e:
+            print(f"❌ Periodic Sync Error: {e}")
+        await asyncio.sleep(900) # 15 minutes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -111,8 +126,20 @@ async def lifespan(app: FastAPI):
         print("✅ Rhea Cortex Online (Vertex AI)")
     except Exception as e:
         print(f"❌ Failed to init Cortex: {e}")
+        
+    # Initialize Lore Memory
+    try:
+        await lore_memory.initialize()
+        print("✅ Lore Memory System Operational")
+    except Exception as e:
+        print(f"❌ Failed to init Lore Memory: {e}")
+        
+    # Start Background Sync
+    sync_task = asyncio.create_task(periodic_sync())
+    
     yield
     # Cleanup
+    sync_task.cancel()
     print("💤 Rhea Cortex Offline")
 
 app = FastAPI(
@@ -594,6 +621,72 @@ async def get_world_bible(world_id: str = "world_default"):
 async def search_lore(q: str, limit: int = 20):
     return [{"id": "lore_1", "title": f"Result for {q}", "category": "General", "source": "Rhea"}]
 
+@app.get("/v1/intelligence/search")
+async def search_intelligence(q: str = Query(..., description="The lore search query")):
+    """
+    High-performance semantic search against Rhea's local Lore memory.
+    """
+    try:
+        results = await lore_memory.search_lore(q)
+        return {
+            "status": "success",
+            "query": q,
+            "results_count": len(results),
+            "results": [
+                {
+                    "name": r["name"],
+                    "category": r["category"],
+                    "description": r["description"],
+                    "era": r["era"],
+                    "notion_url": r["url"]
+                } for r in results
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Intelligence Search Error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/v1/intelligence/feed")
+async def get_intelligence_feed(limit: int = 5, local_only: bool = False):
+    """
+    Returns the latest X entries from the LoreDB.
+    Attempts local lookup first, falls back to Notion for live data if requested.
+    """
+    try:
+        # 1. Try Local Memory first (fastest)
+        entities = await lore_memory.search_lore("", limit=limit) # Empty search gets latest by last_edited
+        
+        if not entities and not local_only:
+            # 2. Fallback to Notion if local is empty
+            from services.notion import NotionService
+            service = NotionService()
+            entities_obj = await service.query_veilverse(limit=limit)
+            entities = [
+                {
+                    "name": e.name,
+                    "category": e.category.value if e.category else "Unknown",
+                    "description": e.description,
+                    "url": e.url
+                } for e in entities_obj
+            ]
+
+        return {
+            "status": "success",
+            "source": "local" if entities else "notion",
+            "batch_timestamp": datetime.now().isoformat(),
+            "latest_lore": [
+                {
+                    "name": e["name"] if isinstance(e, dict) else e.name,
+                    "category": e.get("category", "Unknown") if isinstance(e, dict) else e.category.value,
+                    "description": e.get("description", "") if isinstance(e, dict) else e.description,
+                    "notion_url": e.get("url") if isinstance(e, dict) else e.url
+                } for e in entities
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Intelligence Feed Error: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/lore/{id}")
 async def get_lore_item(id: str):
     return {"id": id, "title": "Lore Item", "category": "General"}
@@ -642,8 +735,10 @@ async def list_worlds():
     return ["world_default", "world_rhea"]
 
 @app.post("/sync")
-async def manual_sync(req: SyncRequest):
-    return "Sync Started"
+async def manual_sync(background_tasks: BackgroundTasks):
+    """Triggers an immediate background sync of the LoreDB."""
+    background_tasks.add_task(sync_engine.run_sync)
+    return {"status": "success", "message": "Manual LoreDB synchronization started in background"}
 
 @app.get("/sync/{world_id}")
 async def sync_status(world_id: str):
