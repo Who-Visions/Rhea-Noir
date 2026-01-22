@@ -137,112 +137,16 @@ python rhea_bridge_server.py
 
 ## 📡 API Reference
 
-**Production**: `https://rhea-noir-145241643240.us-central1.run.app`  
-**Local**: `http://localhost:8081`  
-**Interactive Docs**: `/docs` (Swagger UI)
-
-### System & Discovery
+### Core Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` | GET | Root status |
-| `/health` | GET | Health check |
-| `/health/detailed` | GET | Detailed health with dependencies |
-| `/config` | GET | Current configuration |
-| `/v1` | GET | V1 API root |
-| `/v1/api` | GET | V1 API info |
+| `/cowrite` | POST | Collaborative worldbuilding with Notion context |
+| `/generate-image` | POST | Image generation via Gemini 3 Pro Image |
+| `/research` | POST | Web research with Google grounding |
+| `/v1/chat/completions` | POST | A2A chat interface (OpenAI-compatible) |
 | `/v1/models` | GET | List available models |
-
-### Agent-to-Agent (A2A)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/a2a` | GET | Get A2A agent card |
-| `/a2a/card` | GET | A2A card alias |
-| `/agent-card` | GET | Agent card alias |
-| `/.well-known/agent.json` | GET | Standard agent discovery |
-| `/v1/chat/completions` | POST | OpenAI-compatible chat |
-| `/v1/chat` | POST | Chat (legacy) |
-
-### Generation
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/generate` | POST | Fleet generate (text) |
-| `/generate-image` | POST | Image generation (Nano Banana) |
-| `/generate/video` | POST | Video generation |
-| `/generate/world` | POST | World generation |
-| `/v1/embeddings` | POST | Create embeddings |
-
-### Research & Analysis
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/research` | POST | Start research task |
-| `/research/{task_id}` | GET | Get research status |
-| `/search` | POST | Fleet search |
-| `/analyze-url` | POST | Analyze URL content |
-| `/execute-code` | POST | Execute code |
-
-### Lore & Worldbuilding
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/cowrite` | POST | Collaborative worldbuilding |
-| `/lore/feed` | GET | Get lore feed |
-| `/lore/weighted` | GET | Get weighted lore |
-| `/lore/bible` | GET | Get world bible |
-| `/lore/search` | GET | Search lore |
-| `/lore/{id}` | GET | Get lore item |
-| `/worlds` | GET | List worlds |
-
-### Story Engine
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/story/sessions` | GET | List story sessions |
-| `/story/session` | POST | Create story session |
-| `/story/session/{session_id}` | GET | Get story session |
-| `/story/generate` | POST | Generate story content |
-
-### Sync & Ingestion
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/ingest` | POST | Ingest content |
-| `/sync` | POST | Manual sync |
-| `/sync/{world_id}` | GET | Sync status |
-| `/webhook/notion` | POST | Notion webhook |
-
-### Smart Home (Lights/Razer)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/lights/status` | GET | Get lights status |
-| `/lights/set` | POST | Set light state |
-| `/lights/effect` | POST | Run light effect |
-| `/lights/presets` | GET | Get light presets |
-| `/lights/preset/{preset_id}` | POST | Apply light preset |
-| `/razer/status` | GET | Get Razer status |
-| `/razer/effect` | POST | Set Razer effect |
-| `/razer/sync` | POST | Sync Razer |
-
-### Webhooks & Integrations
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/hooks/slack/events` | POST | Slack events |
-| `/hooks/slack/commands` | POST | Slack commands |
-| `/hooks/pubsub` | POST | Pub/Sub webhook |
-
-### Validation
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/validate` | GET | Run full validation |
-| `/validate/quick` | GET | Quick validation |
-
----
+| `/v1/skills` | GET | List available skills (planned) |
 
 ### `/v1/chat/completions` Capabilities
 
@@ -275,8 +179,6 @@ All errors return:
 | `NOT_FOUND` | Resource does not exist |
 | `RATE_LIMITED` | Too many requests |
 | `INTERNAL` | Server error |
-
-> **Note**: `request_id` is generated server-side and returned in the `X-Request-ID` response header.
 
 ### Streaming
 
@@ -408,8 +310,6 @@ python scripts/ingestion/ingest_youtube.py --url "https://youtube.com/watch?v=..
 | **Database** | Notion (Worldbuilding), Firebase (Memory Sync) |
 | **Server** | FastAPI with Uvicorn |
 
-> **Version Note**: Gemini model aliases (e.g., `gemini-3-flash`) may resolve to newer revisions. Pin explicit versions in production if determinism is required.
-
 ---
 
 ## 🗺️ Roadmap
@@ -421,7 +321,6 @@ python scripts/ingestion/ingest_youtube.py --url "https://youtube.com/watch?v=..
 - [ ] Rhea Noir Python SDK
 - [ ] Vertex AI deployment spec
 - [ ] Skill Registry endpoint (`/v1/skills`)
-- [ ] Health check endpoint (`/healthz`)
 
 ---
 
