@@ -1,6 +1,6 @@
 # --- Stage 1: Build Flutter Web ---
-# Use an official Flutter image for building
-FROM ghcr.io/cirruslabs/flutter:3.27.1 AS builder
+# Use stable channel for maximum reliability
+FROM ghcr.io/cirruslabs/flutter:stable AS builder
 
 WORKDIR /src
 
@@ -8,10 +8,10 @@ WORKDIR /src
 COPY rhea_mobile_command/ ./rhea_mobile_command/
 WORKDIR /src/rhea_mobile_command
 
-# Build for Web
-# We inject the BRIDGE_URL to point to the origin (relative or absolute)
-# Since it's served from same domain, relative or default is fine.
-# We hardcode the production URL as default fallback.
+# Clean and Build
+# We run clean to ensure no potential artifacts cause issues
+RUN flutter clean
+RUN flutter pub get
 RUN flutter build web --release --dart-define=BRIDGE_URL=https://rhea-noir-145241643240.us-central1.run.app
 
 # --- Stage 2: Python API + Serving ---
