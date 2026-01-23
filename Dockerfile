@@ -5,12 +5,15 @@ FROM ghcr.io/cirruslabs/flutter:stable AS builder
 WORKDIR /src
 
 # Copy the Flutter project
-COPY rhea_mobile_command/ ./rhea_mobile_command/
+# Copying everything to rule out path issues
+COPY . .
 WORKDIR /src/rhea_mobile_command
 
 # Clean and Build
-# We run clean to ensure no potential artifacts cause issues
-RUN ls -R
+# List files to verify context
+RUN echo "Current Directory:" && pwd && ls -la
+RUN echo "Lib Directory:" && ls -la lib/ || echo "LIB NOT FOUND"
+
 RUN flutter clean
 RUN flutter pub get
 RUN flutter build web --release --dart-define=BRIDGE_URL=https://rhea-noir-145241643240.us-central1.run.app
