@@ -19,7 +19,7 @@ import httpx # Async HTTP Client for Kaedra Bridge
 from services.memory import LoreMemoryService
 from services.sync_engine import LoreSyncEngine
 from rhea_noir.gemini3_router import get_router, ThinkingLevel as RouterThinkingLevel
-from rhea_noir.agent import RHEA_NOIR_INSTRUCTION
+from rhea_noir.persona import get_system_prompt
 from rhea_noir.router import reflex
 
 # Configure Logging
@@ -66,7 +66,7 @@ def route_request(
     
     # Map the decision back to types.GenerateContentConfig
     config = types.GenerateContentConfig(
-        system_instruction=RHEA_NOIR_INSTRUCTION,
+        system_instruction=get_system_prompt(decision.model), # Uses default or mode-based logic in future
         thinking_config=types.ThinkingConfig(
             thinking_level=decision.thinking_level.value
         ),
