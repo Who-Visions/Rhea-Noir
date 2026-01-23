@@ -4,7 +4,10 @@ SQLite (short-term) + BigQuery (long-term) with lazy sync
 """
 
 from .short_term import ShortTermMemory
-from .long_term import BigQueryMemory
+try:
+    from .long_term import BigQueryMemory
+except ImportError:
+    BigQueryMemory = None
 from .keywords import KeywordExtractor
 from .sync import MemorySync
 from .chunker import SmartChunker

@@ -4,6 +4,7 @@ Enables knowledge retrieval from documents and web search
 """
 
 from typing import Optional, List, Dict, Any
+from services.memory import LoreMemoryService
 
 # Vertex AI Search availability
 VERTEX_SEARCH_AVAILABLE = False
@@ -47,6 +48,9 @@ class RheaSearch:
                 self.client = discoveryengine.SearchServiceClient()
             except Exception as e:
                 print(f"⚠️ Vertex AI Search init failed: {e}")
+
+        # Initialize Lore Memory (Local SQL)
+        self.lore = LoreMemoryService()
 
     def search_knowledge(
         self,
@@ -180,6 +184,25 @@ class RheaSearch:
         except Exception:
             return []
 
+    async def search_lore(
+        self,
+        query: str,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Search Lore Memory (Veillore DB / Notion Mirror).
+        """
+        try:
+            return await self.lore.search_lore(query, limit=limit)
+        except Exception as e:
+            print(f"⚠️ Lore search error: {e}")
+            return []
+
+    @property
+    def lore_memory(self) -> LoreMemoryService:
+        """Expose LoreMemoryService for direct access/init."""
+        return self.lore
+
     def unified_search(
         self,
         query: str,
@@ -211,6 +234,59 @@ class RheaSearch:
             results["web_answer"] = web_result.get("answer", "")
 
         return results
+
+    async def unified_search_async(
+        self,
+        query: str,
+        sources: Optional[List[str]] = None,
+    ) -> Dict[str, List[Dict]]:
+        """
+        Async unified search prioritizing Local SQL (Lore).
+        """
+        print(f"🔍 DEBUG: unified_search_async called for '{query}'")
+        results = {}
+        if sources is None:
+            sources = ["lore", "memory", "knowledge", "web"]
+        
+        print(f"🔍 DEBUG: Sources: {sources}")
+
+        # 1. Local Lore SQL (Priority)
+        if "lore" in sources:
+            print("🔍 DEBUG: Searching Lore...")
+            results["lore"] = await self.search_lore(query)
+            print(f"🔍 DEBUG: Lore results found: {len(results['lore'])}")
+
+        # 2. Short Term Memory
+        if "memory" in sources:
+            results["memory"] = self.search_memory(query)
+
+        # 3. Knowledge Base (Vertex)
+        if "knowledge" in sources:
+            results["knowledge"] = self.search_knowledge(query)
+
+        # 4. Web Grounding (Fallback/Supplement)
+        if "web" in sources:
+            # Note: This is blocking, might want to make async if possible
+            web_result = self.search_with_grounding(query)
+            results["web"] = web_result.get("sources", [])
+            results["web_answer"] = web_result.get("answer", "")
+
+        return results
+
+    def unified_search(
+        self,
+        query: str,
+        sources: Optional[List[str]] = None,
+    ) -> Dict[str, List[Dict]]:
+        """Synchronous wrapper for unified search (for backward compat)."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        return loop.run_until_complete(self.unified_search_async(query, sources))
 
 
 # Global search instance (initialized without data store)

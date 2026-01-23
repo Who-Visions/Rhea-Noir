@@ -28,7 +28,8 @@ class LoreMemoryService:
                     era TEXT,
                     last_edited DATETIME,
                     url TEXT,
-                    last_synced DATETIME
+                    last_synced DATETIME,
+                    score REAL DEFAULT 0
                 )
             """)
             await db.execute("""
@@ -41,6 +42,24 @@ class LoreMemoryService:
                     FOREIGN KEY (target_id) REFERENCES entities(notion_id)
                 )
             """)
+            
+            # Migration: Add score column if it doesn't exist
+            try:
+                await db.execute("ALTER TABLE entities ADD COLUMN score REAL DEFAULT 0")
+            except Exception:
+                pass  # Column likely exists
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS hindsight_notes (
+                    id TEXT PRIMARY KEY,
+                    timestamp DATETIME,
+                    task_name TEXT,
+                    trigger_event TEXT,
+                    outcome TEXT,
+                    key_lesson TEXT,
+                    content_json TEXT
+                )
+            """)
             await db.commit()
             print(f"🧠 LoreMemory: Database initialized at {self.db_path}")
 
@@ -49,8 +68,8 @@ class LoreMemoryService:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT INTO entities (
-                    notion_id, name, category, description, content, era, last_edited, url, last_synced
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notion_id, name, category, description, content, era, last_edited, url, last_synced, score
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(notion_id) DO UPDATE SET
                     name=excluded.name,
                     category=excluded.category,
@@ -59,7 +78,8 @@ class LoreMemoryService:
                     era=excluded.era,
                     last_edited=excluded.last_edited,
                     url=excluded.url,
-                    last_synced=excluded.last_synced
+                    last_synced=excluded.last_synced,
+                    score=excluded.score
             """, (
                 entity_data['notion_id'],
                 entity_data['name'],
@@ -69,7 +89,8 @@ class LoreMemoryService:
                 entity_data.get('era', 'Unknown'),
                 entity_data['last_edited'],
                 entity_data['url'],
-                datetime.now().isoformat()
+                datetime.now().isoformat(),
+                entity_data.get('score', 0)
             ))
             await db.commit()
 
@@ -81,7 +102,7 @@ class LoreMemoryService:
             sql = """
                 SELECT * FROM entities 
                 WHERE name LIKE ? OR description LIKE ? OR content LIKE ?
-                ORDER BY last_edited DESC
+                ORDER BY score DESC, last_edited DESC
                 LIMIT ?
             """
             search_param = f"%{query}%"
@@ -96,6 +117,48 @@ class LoreMemoryService:
             async with db.execute("SELECT * FROM entities WHERE notion_id = ?", (notion_id,)) as cursor:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
+
+    async def add_hindsight_note(self, note: Dict[str, Any]):
+        """Stores a hindsight note."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO hindsight_notes (
+                    id, timestamp, task_name, trigger_event, outcome, key_lesson, content_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                note["id"],
+                note["timestamp"],
+                note["task_name"],
+                note["trigger_event"],
+                note["outcome"],
+                note["key_lesson"],
+                json.dumps(note)
+            ))
+            await db.commit()
+
+    async def search_notes(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Searches hindsight notes."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            sql = """
+                SELECT * FROM hindsight_notes 
+                WHERE key_lesson LIKE ? OR task_name LIKE ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            search_param = f"%{query}%"
+            async with db.execute(sql, (search_param, search_param, limit)) as cursor:
+                rows = await cursor.fetchall()
+                results = []
+                for row in rows:
+                    data = dict(row)
+                    if data.get("content_json"):
+                        try:
+                            data.update(json.loads(data["content_json"]))
+                        except:
+                            pass
+                    results.append(data)
+                return results
 
     async def get_stats(self) -> Dict[str, Any]:
         """Returns database statistics."""

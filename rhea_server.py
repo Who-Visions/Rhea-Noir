@@ -18,6 +18,9 @@ import logging
 import httpx # Async HTTP Client for Kaedra Bridge
 from services.memory import LoreMemoryService
 from services.sync_engine import LoreSyncEngine
+from rhea_noir.gemini3_router import get_router, ThinkingLevel as RouterThinkingLevel
+from rhea_noir.agent import RHEA_NOIR_INSTRUCTION
+from rhea_noir.router import reflex
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -45,59 +48,35 @@ class ThinkingLevel(str, Enum):
     HIGH = "high"
 
 # --- Senior-Level Smart Router (Gemini 3 Pure) ---
+# Redirecting to the established Gemini3Router in rhea_noir/gemini3_router.py
 def route_request(
     requested_model: Optional[str], 
     thinking_level: ThinkingLevel, 
-    prompt_complexity: int = 1
-) -> tuple[str, Optional[types.GenerateContentConfig]]:
+    prompt_complexity: int = 1,
+    query: str = ""
+) -> tuple[str, Optional[types.GenerateContentConfig], Any]:
     """
     Intelligent routing logic for Gemini 3 Fleet.
-    Strictly enforces Gemini 3 architecture.
+    Delegates to the established Gemini3Router.
     """
+    router = get_router()
     
-    # 1. Hardware/Model Selection
-    # Default: Gemini 3 Flash Preview (Balanced Speed/Intellect)
-    selected_model = "gemini-3-flash-preview" 
+    # Use the router to classify and route the query
+    decision = router.route(query or "Hello")
     
-    # Auto-Upgrade logic to Pro (Reasoning Specialist)
-    if requested_model:
-        selected_model = requested_model
-    elif thinking_level == ThinkingLevel.HIGH:
-        selected_model = "gemini-3-pro-preview"
-    elif prompt_complexity > 8:
-         selected_model = "gemini-3-pro-preview"
-    
-    # 2. Config Generation - Gemini 3 Native
-    # STRICT: Thinking Levels Only. No "Thinking Budget".
-    
-    # Map internal enum to string for SDK stability
-    sdk_thinking_level = "high" # Default safe fallback
-    
-    if thinking_level == ThinkingLevel.MINIMAL:
-            sdk_thinking_level = "minimal"
-    elif thinking_level == ThinkingLevel.LOW:
-        sdk_thinking_level = "low"
-    elif thinking_level == ThinkingLevel.MEDIUM:
-        sdk_thinking_level = "medium"
-    elif thinking_level == ThinkingLevel.HIGH:
-        sdk_thinking_level = "high"
-        
-    # Pro Compatibility Layer (Gemini 3 Pro only supports Low/High)
-    if "gemini-3-pro" in selected_model:
-        if thinking_level == ThinkingLevel.MINIMAL:
-            sdk_thinking_level = "low" # Upgrade minimal to low for Pro
-        elif thinking_level == ThinkingLevel.MEDIUM:
-            sdk_thinking_level = "high" # Upgrade medium to high for Pro
-    
-    generation_config = types.GenerateContentConfig(
-        temperature=1.0, # Gemini 3 Standard
+    # Map the decision back to types.GenerateContentConfig
+    config = types.GenerateContentConfig(
+        system_instruction=RHEA_NOIR_INSTRUCTION,
         thinking_config=types.ThinkingConfig(
-            thinking_level=sdk_thinking_level,
-            include_thoughts=True # Always transparency
-        ), 
+            thinking_level=decision.thinking_level.value
+        ),
+        tools=[router._grounding_tool]
     )
     
-    return selected_model, generation_config
+    # Get the correct client for this model
+    client_instance = router._get_client_for_model(decision.model)
+    
+    return decision.model, config, client_instance
 
 
 # Global Clients (Lazy Loaded in Lifespan)
@@ -123,12 +102,12 @@ async def periodic_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client, lore_memory, sync_engine
+    global lore_memory, sync_engine
     
-    # 1. Initialize Vertex AI Client on startup
+    # 1. Initialize Gemini 3 Router on startup
     try:
-        client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-        logger.info("✅ Rhea Cortex Online (Vertex AI)")
+        get_router()._lazy_load()
+        logger.info("✅ Rhea Cortex Online (Gemini 3 Router)")
     except Exception as e:
         logger.error(f"❌ Failed to init Cortex: {e}")
         
@@ -444,20 +423,53 @@ async def list_models_alias():
 # Chat & Completion
 @app.post("/v1/chat/completions")
 async def chat_completions(req: OpenAIChatCompletionRequest):
-    if not client:
-        raise HTTPException(status_code=503, detail="Cortex not initialized")
     try:
-        last_msg = req.messages[-1].content if req.messages else "Hello"
-        if isinstance(last_msg, list): last_msg = str(last_msg)
+        last_msg_text = req.messages[-1].content if req.messages else "Hello"
+        if isinstance(last_msg_text, list): last_msg_text = str(last_msg_text)
         
-        # ROUTING
-        model_id, config = route_request(req.model, req.thinking_level)
+        # 1. ATTEMPT DYNAMIC SKILL EXECUTION
+        # Reflex will decide if a skill (Notion, Flutter, etc.) is needed
+        skill_result = reflex.execute(last_msg_text)
         
-        response = await client.aio.models.generate_content(
-            model=model_id,
-            contents=last_msg,
-            config=config # Pass the smart config
-        )
+        if skill_result.get("success"):
+            # A skill was triggered and executed!
+            # We wrap the result in a Rhea persona response
+            model_id, config, client_instance = route_request(None, ThinkingLevel.LOW, query=last_msg_text)
+            
+            verbalize_prompt = f"""{RHEA_NOIR_INSTRUCTION}
+            
+            The user requested: "{last_msg_text}"
+            The skill "{skill_result['skill']}" was executed with action "{skill_result['action']}".
+            RESULT: {skill_result['result']}
+            
+            Synthesize this result into an elegant, helpful response for the user.
+            """
+            
+            response = await client_instance.aio.models.generate_content(
+                model=model_id,
+                contents=verbalize_prompt,
+                config=config
+            )
+            content = response.text
+        else:
+            # 2. FALLBACK TO INTELLIGENT CHAT
+            model_id, config, client_instance = route_request(req.model, req.thinking_level, query=last_msg_text)
+            
+            # MAP MESSAGES TO GEMINI CONTENTS
+            contents = []
+            for m in req.messages:
+                # Map system role to user for prompt injection, or model if assistant
+                role = "user" if m.role in ["user", "system"] else "model"
+                content_text = m.content if isinstance(m.content, str) else str(m.content)
+                contents.append(types.Content(role=role, parts=[types.Part(text=content_text)]))
+                
+            response = await client_instance.aio.models.generate_content(
+                model=model_id,
+                contents=contents,
+                config=config # Pass the smart config
+            )
+            content = response.text
+            
         return {
             "id": "chatcmpl-rhea",
             "object": "chat.completion",
@@ -465,23 +477,23 @@ async def chat_completions(req: OpenAIChatCompletionRequest):
             "model": model_id,
             "choices": [{
                 "index": 0,
-                "message": {"role": "assistant", "content": response.text},
+                "message": {"role": "assistant", "content": content},
                 "finish_reason": "stop"
             }]
         }
     except Exception as e:
+        logger.error(f"Chat Completion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
 @app.post("/v1/chat")
 async def chat_legacy(req: ChatRequest):
     # Legacy alias - Auto-routes to Flash/Low
-    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
         # Default smart route
-        model_id, config = route_request(None, ThinkingLevel.LOW)
+        model_id, config, client_instance = route_request(None, ThinkingLevel.LOW, query=req.message)
         
-        response = await client.aio.models.generate_content(
+        response = await client_instance.aio.models.generate_content(
             model=model_id, 
             contents=req.message,
             config=config
@@ -500,12 +512,11 @@ async def chat_legacy(req: ChatRequest):
 # Generate (Text/Image/Video/World)
 @app.post("/generate")
 async def fleet_generate(req: GenerateRequest):
-    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
         # User has full control via req parameters
-        model_id, config = route_request(req.model, req.thinking_level)
+        model_id, config, client_instance = route_request(req.model, req.thinking_level, query=req.prompt)
         
-        response = await client.aio.models.generate_content(
+        response = await client_instance.aio.models.generate_content(
             model=model_id, 
             contents=req.prompt,
             config=config
@@ -522,12 +533,13 @@ async def fleet_generate(req: GenerateRequest):
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
-    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
         # Nano Banana Pro Pattern (Gemini 3 Pro Image)
         # Supports Thinking + Grounding + 4K
+        router = get_router()
+        client_instance = router._get_client_for_model("gemini-3-pro-image-preview")
         
-        response = await client.aio.models.generate_content(
+        response = await client_instance.aio.models.generate_content(
             model="gemini-3-pro-image-preview",
             contents=req.prompt,
             config=types.GenerateContentConfig(
@@ -586,12 +598,11 @@ async def generate_world(req: WorldBuildRequest):
 # Research & Code
 @app.post("/research")
 async def start_research(req: ResearchRequest):
-    if not client: raise HTTPException(status_code=503, detail="Cortex Offline")
     try:
         # Research implies complex thought -> Force HIGH thinking
-        model_id, config = route_request(None, ThinkingLevel.HIGH)
+        model_id, config, client_instance = route_request(None, ThinkingLevel.HIGH, query=req.query)
         
-        response = await client.aio.models.generate_content(
+        response = await client_instance.aio.models.generate_content(
             model=model_id, 
             contents=f"Research: {req.query}",
             config=config

@@ -1,126 +1,88 @@
-"""
-Memory Skill - Store and recall conversation memories.
-"""
-
-from typing import Dict, List, Any, Optional
-from ..base import Skill
-
+from typing import Dict, Any, List
+from rhea_noir.skills.base import Skill
+from services.memory import LoreMemoryService
+from rhea_noir.memory.models import HindsightNote
+import uuid
+import json
 
 class MemorySkill(Skill):
     """
-    Rhea's memory system.
-    - Store messages with keywords
-    - Recall by semantic search
-    - Sync to cloud (BigQuery)
+    Skill for Active Memory Management (Confucius Style).
+    Allows Rhea to create 'Hindsight Notes' and manage her own long-term context.
     """
-
-    name = "memory"
-    description = "Store and recall conversation memories"
-    version = "1.0.0"
-
+    
     def __init__(self):
         super().__init__()
-        self._stm = None
-        self._sync = None
-        self._extractor = None
+        self.memory = LoreMemoryService()
+
+    @property
+    def name(self) -> str:
+        return "memory"
+
+    @property
+    def description(self) -> str:
+        return "Tools for self-reflection, creating hindsight notes, and retrieving experiences."
 
     @property
     def actions(self) -> List[str]:
-        return ["store", "recall", "sync", "stats"]
-
-    def _lazy_load(self):
-        """Lazy load memory components."""
-        if self._stm is None:
-            try:
-                from rhea_noir.memory import ShortTermMemory, MemorySync, KeywordExtractor
-                self._stm = ShortTermMemory()
-                self._extractor = KeywordExtractor()
-                self._sync = MemorySync(stm=self._stm)
-            except ImportError:
-                pass
+        return ["reflect", "recall_notes"]
 
     def execute(self, action: str, **kwargs) -> Dict[str, Any]:
-        """Execute a memory action."""
-        self._lazy_load()
-
-        if not self._stm:
-            return self._error("Memory system not available")
-
-        if action == "store":
-            return self._store(**kwargs)
-        elif action == "recall":
-            return self._recall(**kwargs)
-        elif action == "sync":
-            return self._sync_to_cloud()
-        elif action == "stats":
-            return self._get_stats()
+        """
+        Executes memory actions.
+        NOTE: This is a synchronous wrapper around async DB calls.
+        """
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        if action == "reflect":
+            return loop.run_until_complete(self._reflect(**kwargs))
+        elif action == "recall_notes":
+            return loop.run_until_complete(self._recall_notes(**kwargs))
         else:
-            return self._action_not_found(action)
+            return {"error": f"Unknown action: {action}"}
 
-    def _store(
-        self,
-        role: str = "user",
-        content: str = "",
-        keywords: Optional[List[str]] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Store a message in memory."""
-        if not content:
-            return self._error("Content is required")
+    async def _reflect(self, 
+                      task_name: str, 
+                      outcome: str, 
+                      what_happened: str, 
+                      key_lesson: str,
+                      trigger_event: str = "Self-Reflection",
+                      root_cause: str = None,
+                      tags: List[str] = []) -> Dict[str, Any]:
+        """
+        Creates a new Hindsight Note.
+        """
+        note = HindsightNote(
+            id=str(uuid.uuid4()),
+            task_name=task_name,
+            trigger_event=trigger_event,
+            what_happened=what_happened,
+            outcome=outcome,
+            root_cause=root_cause,
+            key_lesson=key_lesson,
+            tags=tags
+        )
+        
+        await self.memory.initialize()
+        # Ensure timestamp is serialized to string
+        note_data = json.loads(note.json()) 
+        await self.memory.add_hindsight_note(note_data)
+        
+        return {
+            "status": "success", 
+            "message": f"Hindsight note recorded: {key_lesson}",
+            "note_id": note.id
+        }
 
-        # Auto-extract keywords if not provided
-        if keywords is None and self._extractor:
-            keywords = self._extractor.extract(content)
-
-        try:
-            self._stm.store(role=role, content=content, keywords=keywords or [])
-            return self._success({
-                "stored": True,
-                "keywords": keywords or [],
-            })
-        except Exception as e:
-            return self._error(str(e))
-
-    def _recall(
-        self,
-        query: str = "",
-        limit: int = 5,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Search memories by query."""
-        if not query:
-            return self._error("Query is required")
-
-        try:
-            results = self._stm.recall(query, limit=limit)
-            return self._success({
-                "count": len(results),
-                "memories": results,
-            })
-        except Exception as e:
-            return self._error(str(e))
-
-    def _sync_to_cloud(self) -> Dict[str, Any]:
-        """Force sync to BigQuery."""
-        if not self._sync:
-            return self._error("Cloud sync not configured")
-
-        try:
-            count = self._sync.force_sync()
-            return self._success({
-                "synced": count,
-            })
-        except Exception as e:
-            return self._error(str(e))
-
-    def _get_stats(self) -> Dict[str, Any]:
-        """Get memory statistics."""
-        try:
-            stats = self._stm.get_stats()
-            return self._success(stats)
-        except Exception as e:
-            return self._error(str(e))
+    async def _recall_notes(self, query: str, limit: int = 5) -> Dict[str, Any]:
+        """
+        Searches past Hindsight Notes.
+        """
+        await self.memory.initialize()
+        notes = await self.memory.search_notes(query, limit)
+        return {"notes": notes, "count": len(notes)}
 
 
-# Skill instance for registry
 skill = MemorySkill()

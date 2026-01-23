@@ -2,7 +2,7 @@ import os
 import subprocess
 import json
 import glob
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import threading
 
@@ -92,9 +92,9 @@ class RheaBridgeHandler(BaseHTTPRequestHandler):
             print(f"💬 Rhea Cloud Relay: {user_message}")
             
             try:
-                # Proxy to Cloud Run
+                # Proxy to Local Dev Server (Bypass Cloud 500)
                 import requests
-                CLOUD_URL = "https://rhea-noir-145241643240.us-central1.run.app/v1/chat/completions"
+                LOCAL_SERVER_URL = "http://localhost:8081/v1/chat/completions"
                 
                 # Construct OpenAI-compatible payload
                 payload = {
@@ -105,7 +105,7 @@ class RheaBridgeHandler(BaseHTTPRequestHandler):
                     "model": "gemini-3-flash-preview" # Smart Router Target
                 }
                 
-                resp = requests.post(CLOUD_URL, json=payload, timeout=10)
+                resp = requests.post(LOCAL_SERVER_URL, json=payload, timeout=60)
                 
                 if resp.status_code == 200:
                     r_json = resp.json()
@@ -125,7 +125,7 @@ class RheaBridgeHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-def run(server_class=HTTPServer, handler_class=RheaBridgeHandler):
+def run(server_class=ThreadingHTTPServer, handler_class=RheaBridgeHandler):
     server_address = ('', PORT)
     httpd = server_class(server_address, handler_class)
     print(f"🌉 Rhea Bridge Server running on port {PORT}...")

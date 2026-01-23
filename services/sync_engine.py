@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from services.notion import NotionService
 from services.memory import LoreMemoryService
 import httpx
@@ -15,17 +15,26 @@ class LoreSyncEngine:
         self.notion = NotionService()
         self.memory = LoreMemoryService()
 
-    async def run_sync(self):
+    async def run_sync(self, force: bool = False):
         """Executes a full or differential sync."""
         await self.memory.initialize()
-        stats = await self.memory.get_stats()
-        last_sync_time = stats.get("last_notion_edit")
         
-        print(f"🔄 LoreSync: Starting sync. Last edit in DB: {last_sync_time}")
+        last_sync_time = None
+        if not force:
+            stats = await self.memory.get_stats()
+            last_sync_time = stats.get("last_notion_edit")
+        
+        print(f"🔄 LoreSync: Starting sync. Force={force}. Last edit in DB: {last_sync_time}")
         
         try:
-            all_pages = await self._fetch_all_notion_pages()
-            print(f"🔄 LoreSync: Found {len(all_pages)} pages in Notion.")
+            # Pass the last_sync_time to only fetch what changed
+            all_pages = await self._fetch_all_notion_pages(since_time=last_sync_time)
+            
+            if not all_pages:
+                print(f"✅ LoreSync: No new updates found since {last_sync_time}. Sync complete.")
+                return
+
+            print(f"🔄 LoreSync: Found {len(all_pages)} updated pages in Notion.")
         except Exception as e:
             print(f"❌ LoreSync: Failed to fetch pages from Notion: {e}")
             return
@@ -50,7 +59,8 @@ class LoreSyncEngine:
                     "era": self._get_select(page, "Universe Era"),
                     "content": content,
                     "last_edited": notion_edit,
-                    "url": page.get("url")
+                    "url": page.get("url"),
+                    "score": self._get_number(page, "Importance Score")
                 }
                 
                 await self.memory.upsert_entity(entity_data)
@@ -64,7 +74,7 @@ class LoreSyncEngine:
             
         print(f"✅ LoreSync: Sync complete. Updated {updated_count} entities.")
 
-    async def _fetch_all_notion_pages(self) -> List[Dict[str, Any]]:
+    async def _fetch_all_notion_pages(self, since_time: Optional[str] = None) -> List[Dict[str, Any]]:
         url = f"https://api.notion.com/v1/databases/{self.notion.DATABASE_ID}/query"
         headers = {
             "Authorization": f"Bearer {self.notion.token}",
@@ -82,6 +92,15 @@ class LoreSyncEngine:
             payload = {"page_size": 100}
             if next_cursor:
                 payload["start_cursor"] = next_cursor
+            
+            # Add differential filter if since_time is provided
+            if since_time:
+                payload["filter"] = {
+                    "timestamp": "last_edited_time",
+                    "last_edited_time": {
+                        "after": since_time
+                    }
+                }
                 
             async with httpx.AsyncClient(timeout=timeout) as http:
                 response = await http.post(url, json=payload, headers=headers)
@@ -141,6 +160,12 @@ class LoreSyncEngine:
         objs = props.get(prop_name, {}).get("rich_text", [])
         return objs[0]["plain_text"] if objs else ""
 
+    def _get_number(self, page, prop_name):
+        props = page.get("properties", {})
+        return props.get(prop_name, {}).get("number", 0)
+
 if __name__ == "__main__":
+    import sys
+    force_sync = "--force" in sys.argv
     engine = LoreSyncEngine()
-    asyncio.run(engine.run_sync())
+    asyncio.run(engine.run_sync(force=force_sync))

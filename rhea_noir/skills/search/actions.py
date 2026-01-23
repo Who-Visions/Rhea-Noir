@@ -21,7 +21,7 @@ class SearchSkill(Skill):
 
     @property
     def actions(self) -> List[str]:
-        return ["web", "knowledge", "memory", "unified"]
+        return ["web", "knowledge", "memory", "lore", "unified"]
 
     def _lazy_load(self):
         if self._searcher is None:
@@ -50,8 +50,18 @@ class SearchSkill(Skill):
         elif action == "memory":
             results = self._searcher.search_memory(query)
             return self._success({"results": results})
+        elif action == "lore":
+            # Direct lore search access
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            results = loop.run_until_complete(self._searcher.search_lore(query))
+            return self._success({"results": results})
         elif action == "unified":
-            sources = kwargs.get("sources", ["memory", "knowledge", "web"])
+            sources = kwargs.get("sources", ["lore", "memory", "knowledge", "web"])
             results = self._searcher.unified_search(query, sources)
             return self._success(results)
         else:

@@ -17,13 +17,13 @@ class BaseRouter(ABC):
 
     @property
     def client(self):
-        """Lazy load Gemini client."""
-        if self._client is None:
-            # pylint: disable=import-outside-toplevel
-            from google import genai
-
-            self._client = genai.Client()
-        return self._client
+        """Lazy load unified Gemini client from router."""
+        from rhea_noir.gemini3_router import get_router
+        router = get_router()
+        router._lazy_load()
+        # Default to Flash client for most routing decisions, 
+        # strategies can override if they need Pro.
+        return router._get_client_for_model(router.models["flash"])
 
     @abstractmethod
     def route(self, request: str, context: Optional[Dict] = None) -> Dict[str, Any]:

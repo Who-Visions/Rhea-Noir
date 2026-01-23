@@ -2,13 +2,20 @@
 Rhea Noir Module: long_term.py
 Auto-generated docstring.
 """
-from google.cloud import bigquery
-from google.api_core.exceptions import NotFound
 import os
 import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any
+
+# Optional BigQuery support
+try:
+    from google.cloud import bigquery
+    from google.api_core.exceptions import NotFound
+    BIGQUERY_AVAILABLE = True
+except ImportError:
+    BIGQUERY_AVAILABLE = False
+    bigquery = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
