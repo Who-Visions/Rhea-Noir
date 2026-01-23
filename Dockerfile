@@ -10,6 +10,7 @@ WORKDIR /src/rhea_mobile_command
 
 # Clean and Build
 # We run clean to ensure no potential artifacts cause issues
+RUN ls -R
 RUN flutter clean
 RUN flutter pub get
 RUN flutter build web --release --dart-define=BRIDGE_URL=https://rhea-noir-145241643240.us-central1.run.app
