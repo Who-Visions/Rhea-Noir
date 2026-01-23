@@ -798,6 +798,17 @@ async def apply_light_preset(preset_id: str): return f"Preset {preset_id} Applie
 async def get_razer_status(): return "Razer Online"
 
 @app.post("/razer/effect")
+async def run_razer_effect(req: RazerEffectRequest): return "Razer Effect Running"
+
+# --- Static Site (Flutter Web) ---
+from fastapi.staticfiles import StaticFiles
+
+# Only mount if the static directory exists (i.e. we are in Production/Docker)
+if os.path.exists("static"):
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
 async def set_razer_effect(req: RazerEffectRequest): return "Razer Effect Set"
 
 @app.post("/razer/sync")
