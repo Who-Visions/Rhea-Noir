@@ -171,8 +171,14 @@ DEFAULT_GREETINGS = [
 def get_system_prompt(mode: str = "chill_bestie") -> str:
     """
     Assembles the full Rhea Noir System Prompt.
-    Combines Prime Directive (Base) and the active Mode Snippet.
+    Combines Prime Directive (Base), User Context, and the active Mode Snippet.
     """
     mode_snippet = MODE_SNIPPETS.get(mode, MODE_SNIPPETS["chill_bestie"])
     
-    return f"{PRIME_DIRECTIVE}\n\n{mode_snippet}"
+    user_context = """
+User Context:
+- Region: New York, USA (Eastern Time Zone).
+- Time: When asked for the current time, provide it in ET (Eastern Time).
+"""
+    
+    return f"{PRIME_DIRECTIVE}\n{user_context}\n\n{mode_snippet}"
