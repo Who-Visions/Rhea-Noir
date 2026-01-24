@@ -21,6 +21,17 @@ from services.sync_engine import LoreSyncEngine
 from rhea_noir.gemini3_router import get_router, ThinkingLevel as RouterThinkingLevel
 from rhea_noir.persona import get_system_prompt
 from rhea_noir.router import reflex
+# Blerdcon Module
+from services.blerdcon import (
+    BlerdconService, 
+    BlerdconRSVP, 
+    ConsentProfile, 
+    Announcement, 
+    BlerdconEvent,
+    RSVPStatus,
+    UserRole,
+    ConsentLevel
+)
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -83,6 +94,7 @@ def route_request(
 client: Optional[genai.Client] = None
 lore_memory: Optional[LoreMemoryService] = None
 sync_engine: Optional[LoreSyncEngine] = None
+blerdcon_service: Optional[BlerdconService] = None
 
 async def periodic_sync():
     """Background task to sync Notion LoreDB to SQLite every 15 minutes."""
@@ -102,7 +114,7 @@ async def periodic_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global lore_memory, sync_engine
+    global lore_memory, sync_engine, blerdcon_service
     
     # 1. Initialize Gemini 3 Router on startup
     try:
@@ -127,6 +139,13 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Lore Memory System Operational")
     except Exception as e:
         logger.error(f"❌ Failed to init Lore Memory: {e}")
+
+    # 3. Initialize Blerdcon Service
+    try:
+        blerdcon_service = BlerdconService()
+        logger.info("✅ Blerdcon Ops Module Online")
+    except Exception as e:
+        logger.error(f"❌ Failed to init Blerdcon Service: {e}")
     
     # 3. Start Background Sync (only if engine is ready)
     sync_task = None
@@ -799,6 +818,48 @@ async def get_razer_status(): return "Razer Online"
 
 @app.post("/razer/effect")
 async def run_razer_effect(req: RazerEffectRequest): return "Razer Effect Running"
+
+# --- Blerdcon Module Endpoints ---
+
+@app.get("/v1/blerdcon/event", response_model=BlerdconEvent)
+async def get_blerdcon_event():
+    return await blerdcon_service.get_event()
+
+@app.post("/v1/blerdcon/rsvp", response_model=BlerdconRSVP)
+async def submit_rsvp(rsvp: BlerdconRSVP):
+    return await blerdcon_service.update_rsvp(rsvp)
+
+@app.get("/v1/blerdcon/rsvp/{user_id}", response_model=Optional[BlerdconRSVP])
+async def get_rsvp_status(user_id: str):
+    result = await blerdcon_service.get_rsvp(user_id)
+    if not result:
+        return JSONResponse(status_code=404, content={"detail": "RSVP not found"})
+    return result
+
+@app.get("/v1/blerdcon/stats")
+async def get_blerdcon_stats():
+    return await blerdcon_service.get_stats()
+
+@app.post("/v1/blerdcon/consent", response_model=ConsentProfile)
+async def update_consent_profile(profile: ConsentProfile):
+    return await blerdcon_service.update_consent(profile)
+
+@app.get("/v1/blerdcon/consent/{user_id}", response_model=ConsentProfile)
+async def get_consent_profile(user_id: str):
+    profile = await blerdcon_service.get_consent(user_id)
+    if not profile:
+        # Return default if not set? Or 404. Let's return a default "Ask First" profile.
+        return ConsentProfile(user_id=user_id, photo_consent=ConsentLevel.ASK_FIRST)
+    return profile
+
+@app.get("/v1/blerdcon/feed", response_model=List[Announcement])
+async def get_blerdcon_feed():
+    return await blerdcon_service.get_feed()
+
+@app.post("/v1/blerdcon/feed", response_model=Announcement)
+async def post_announcement(announcement: Announcement):
+    # In real app, verify admin auth here
+    return await blerdcon_service.post_announcement(announcement)
 
 # --- Static Site (Flutter Web) ---
 from fastapi.staticfiles import StaticFiles
